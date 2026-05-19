@@ -1,0 +1,39 @@
+import fs from 'node:fs'
+
+const anchor = Buffer.from("ey8qIHYwIC0gYnVpbHQtd2l0aCBiYWRnZSAqL30KICA8ZGl2IGRhbmdlcm91c2x5U2V0SW5uZXJIVE1MPXt7IF9faHRtbDogYDxkaXYgaWQ9InYwLWJ1aWx0LXdpdGgtYnV0dG9uLTE4MTM0N2ZlLWJjM2YtNGEwYi1iOTFmLWZkYmE0YTg5M2ExNCIgc3R5bGU9Igpib3JkZXI6IDFweCBzb2xpZCBoc2woMGRlZyAwJSAxMDAlIC8gMTIlKTsKcG9zaXRpb246IGZpeGVkOwpib3R0b206IDI0cHg7CnJpZ2h0OiAyNHB4Owp6LWluZGV4OiAxMDAwOwpiYWNrZ3JvdW5kOiAjMTIxMjEyOwpjb2xvcjogd2hpdGU7CnBhZGRpbmc6IDhweCAxMnB4Owpib3JkZXItcmFkaXVzOiA4cHg7CmZvbnQtd2VpZ2h0OiA0MDA7CmZvbnQtc2l6ZTogMTRweDsKYm94LXNoYWRvdzogMCAycHggOHB4IHJnYmEoMCwwLDAsMC4xMik7CmxldHRlci1zcGFjaW5nOiAwLjAyZW07CnRyYW5zaXRpb246IGFsbCAwLjJzOwpkaXNwbGF5OiBmbGV4OwphbGlnbi1pdGVtczogY2VudGVyOwpnYXA6IDRweDsKZm9udC1mYW1pbHk6IC1hcHBsZS1zeXN0ZW0sIEJsaW5rTWFjU3lzdGVtRm9udCwgJ1NlZ29lIFVJJywgUm9ib3RvLCBzYW5zLXNlcmlmOwoiPgo8YQogIGhyZWY9Imh0dHBzOi8vdjAuYXBwL2NoYXQvYXBpL29wZW4vYnVpbHQtd2l0aC12MC9iX0VvT1ZINXQzV28zP3JlZj00R0RCVUoiCiAgdGFyZ2V0PSJfYmxhbmsiCiAgcmVsPSJub29wZW5lciIKICBzdHlsZT0iCiAgICBjb2xvcjogaW5oZXJpdDsKICAgIHRleHQtZGVjb3JhdGlvbjogbm9uZTsKICAgIGRpc3BsYXk6IGZsZXg7CiAgICBhbGlnbi1pdGVtczogY2VudGVyOwogICAgZ2FwOiA0cHg7CiAgIgo+CiAgQnVpbHQgd2l0aAogIDxzdmcKICAgIGZpbGw9ImN1cnJlbnRDb2xvciIKICAgIHZpZXdCb3g9IjAgMCAxNDcgNzAiCiAgICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgICBzdHlsZT0id2lkdGg6IDIwcHg7IGhlaWdodDogMjBweDsiCiAgPgogICAgPHBhdGggZD0iTTU2IDUwLjIwMzFWMTRINzBWNjAuMTU2MkM3MCA2NS41OTI4IDY1LjU5MjggNzAgNjAuMTU2MiA3MEM1Ny41NjA1IDcwIDU0Ljk5ODIgNjguOTk5MiA1My4xNTYyIDY3LjE1NzNMMCAxNEgxOS43OTY5TDU2IDUwLjIwMzFaIiAvPgogICAgPHBhdGggZD0iTTE0NyA1NkgxMzNWMjMuOTUzMUwxMDAuOTUzIDU2SDEzM1Y3MEg5Ni42ODc1Qzg1LjgxNDQgNzAgNzcgNjEuMTg1NiA3NyA1MC4zMTI1VjE0SDkxVjQ2LjE1NjJMMTIzLjE1NiAxNEg5MVYwSDEyNy4zMTJDMTM4LjE4NiAwIDE0NyA4LjgxNDM5IDE0NyAxOS42ODc1VjU2WiIgLz4KICA8L3N2Zz4KPC9hPgoKPGJ1dHRvbgogIG9uY2xpY2s9ImRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCd2MC1idWlsdC13aXRoLWJ1dHRvbi0xODEzNDdmZS1iYzNmLTRhMGItYjkxZi1mZGJhNGE4OTNhMTQnKS5zdHlsZS5kaXNwbGF5PSdub25lJyIKICBvbm1vdXNlZW50ZXI9InRoaXMuc3R5bGUub3BhY2l0eT0nMSciCiAgb25tb3VzZWxlYXZlPSJ0aGlzLnN0eWxlLm9wYWNpdHk9JzAuNyciCiAgc3R5bGU9IgogICAgYmFja2dyb3VuZDogbm9uZTsKICAgIGJvcmRlcjogbm9uZTsKICAgIGNvbG9yOiB3aGl0ZTsKICAgIGN1cnNvcjogcG9pbnRlcjsKICAgIHBhZGRpbmc6IDJweDsKICAgIG1hcmdpbi1sZWZ0OiA0cHg7CiAgICBib3JkZXItcmFkaXVzOiAycHg7CiAgICBkaXNwbGF5OiBmbGV4OwogICAgYWxpZ24taXRlbXM6IGNlbnRlcjsKICAgIG9wYWNpdHk6IDAuNzsKICAgIHRyYW5zaXRpb246IG9wYWNpdHkgMC4yczsKICAgIHRyYW5zZm9ybTogdHJhbnNsYXRlWigwKTsKICAiCiAgYXJpYS1sYWJlbD0iQ2xvc2UiCj4KICA8c3ZnIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPgogICAgPHBhdGggZD0iTTE4IDZMNiAxOE02IDZsMTIgMTIiLz4KICA8L3N2Zz4KPC9idXR0b24+Cgo8c3BhbiBzdHlsZT0iCiAgcG9zaXRpb246IGFic29sdXRlOwogIHdpZHRoOiAxcHg7CiAgaGVpZ2h0OiAxcHg7CiAgcGFkZGluZzogMDsKICBtYXJnaW46IC0xcHg7CiAgb3ZlcmZsb3c6IGhpZGRlbjsKICBjbGlwOiByZWN0KDAsIDAsIDAsIDApOwogIHdoaXRlLXNwYWNlOiBub3dyYXA7CiI+CiAgdjAKPC9zcGFuPgo8L2Rpdj5gIH19IC8+", 'base64').toString('utf8')
+const url = "https://v0.app/chat/api/open/built-with-v0/b_EoOVH5t3Wo3?ref=4GDBUJ"
+const badgePattern = new RegExp(Buffer.from("XG4/XHMqXHtcL1wqIHYwIFstXHUyMDEzXSBidWlsdC13aXRoIGJhZGdlIFwqXC9cfVxzKlxuXHMqPGRpdiBkYW5nZXJvdXNseVNldElubmVySFRNTD1ce1x7IF9faHRtbDogYFtcc1xTXSo/YCBcfVx9IFwvPg==", 'base64').toString('utf8'), 'g')
+const layoutCandidates = [
+  'app/layout.tsx',
+  'app/layout.jsx',
+  'app/layout.js',
+  'src/app/layout.tsx',
+  'src/app/layout.jsx',
+  'src/app/layout.js',
+]
+const layoutPath = layoutCandidates.find((candidate) => fs.existsSync(candidate))
+
+if (!layoutPath) {
+  console.warn('[built-with-v0] Could not find a Next.js root layout to patch')
+  process.exit(0)
+}
+
+const content = fs.readFileSync(layoutPath, 'utf8')
+const contentWithoutExistingBadge = content.replace(badgePattern, '')
+let nextContent = contentWithoutExistingBadge
+
+if (anchor) {
+  if (url && contentWithoutExistingBadge.includes(url)) {
+    nextContent = contentWithoutExistingBadge
+  } else if (/<\/body>/i.test(contentWithoutExistingBadge)) {
+    nextContent = contentWithoutExistingBadge.replace(/<\/body>/i, anchor + String.fromCharCode(10) + '</body>')
+  } else if (/<\/html>/i.test(contentWithoutExistingBadge)) {
+    nextContent = contentWithoutExistingBadge.replace(/<\/html>/i, anchor + String.fromCharCode(10) + '</html>')
+  } else {
+    console.warn('[built-with-v0] Could not inject the built with v0 button before </body> or </html>')
+  }
+}
+
+if (nextContent !== content) {
+  fs.writeFileSync(layoutPath, nextContent)
+}

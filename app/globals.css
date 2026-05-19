@@ -1,0 +1,111 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@theme {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --radius: 0.5rem;
+  --color-background: hsl(10 15% 5%);
+  --color-foreground: hsl(0 0% 98%);
+  --color-card: hsl(220 13% 12%);
+  --color-card-foreground: hsl(0 0% 98%);
+  --color-popover: hsl(220 13% 12%);
+  --color-popover-foreground: hsl(0 0% 98%);
+  --color-primary: hsl(180 100% 35%);
+  --color-primary-foreground: hsl(220 13% 12%);
+  --color-secondary: hsl(220 13% 20%);
+  --color-secondary-foreground: hsl(0 0% 98%);
+  --color-muted: hsl(220 13% 25%);
+  --color-muted-foreground: hsl(0 0% 70%);
+  --color-accent: hsl(180 80% 45%);
+  --color-accent-foreground: hsl(220 13% 12%);
+  --color-destructive: hsl(0 84% 60%);
+  --color-destructive-foreground: hsl(220 13% 12%);
+  --color-border: hsl(220 13% 18%);
+  --color-input: hsl(220 13% 15%);
+  --color-ring: hsl(180 80% 45%);
+  --color-chart-1: hsl(180 100% 45%);
+  --color-chart-2: hsl(0 84% 60%);
+  --color-chart-3: hsl(270 70% 50%);
+  --color-chart-4: hsl(100 80% 45%);
+  --color-chart-5: hsl(40 90% 50%);
+  /* Sidebar tokens */
+  --color-sidebar: hsl(220 15% 8%);
+  --color-sidebar-foreground: hsl(0 0% 85%);
+  --color-sidebar-border: hsl(220 13% 16%);
+  --color-sidebar-accent: hsl(180 80% 45%);
+  --color-sidebar-primary: hsl(180 80% 35%);
+  --color-sidebar-primary-foreground: hsl(0 0% 98%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply bg-background;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(220 13% 22%);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(180 80% 35%);
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite;
+  }
+
+  .glass {
+    @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
+  .glass-dark {
+    @apply bg-card/50 backdrop-blur-xl border border-border/30;
+  }
+
+  .scan-line {
+    animation: scan-line 4s linear infinite;
+  }
+
+  .cyber-grid {
+    background-image:
+      linear-gradient(rgba(0, 200, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 200, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 200, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 200, 255, 0.5);
+  }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
