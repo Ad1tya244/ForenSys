@@ -1,16 +1,39 @@
-// FORENSYS Global Application Store
-// Single source of truth for all live data across pages
+/**
+ * ForenSys Global Store — powered by real backend data
+ * Replaces all mock generators with live WebSocket telemetry.
+ */
 
 import { create } from 'zustand';
 import {
-  Alert,
-  Incident,
-  generateMockAlert,
-  generateMockIncidents,
-  generateRealtimeMetrics,
-} from './mock-data';
+  BackendSocket,
+  BackendSnapshot,
+  RealMetrics,
+  NetworkConnection,
+  RealProcess,
+  RealLogEntry,
+  RealAlert,
+  ArpDevice,
+  checkBackendAlive,
+} from './api-client';
 
-// ─── Notification ────────────────────────────────────────────────────────────
+// ── Re-export types so pages don't need to change their imports ──────────────
+export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics };
+
+// Kept for compatibility with escalation flow
+export interface Incident {
+  id: string;
+  title: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  status: 'open' | 'investigating' | 'contained' | 'resolved';
+  createdAt: Date;
+  lastUpdated: Date;
+  affectedSystems: string[];
+  investigator: string;
+  description: string;
+  evidenceCount: number;
+  relatedAlerts: string[];
+}
+
 export interface AppNotification {
   id: string;
   title: string;
@@ -19,7 +42,6 @@ export interface AppNotification {
   read: boolean;
 }
 
-// ─── Settings ────────────────────────────────────────────────────────────────
 export interface AppSettings {
   notifyOnCritical: boolean;
   notifyOnHigh: boolean;
@@ -30,59 +52,64 @@ export interface AppSettings {
   integrations: { name: string; connected: boolean }[];
 }
 
-// ─── Store State ─────────────────────────────────────────────────────────────
-interface AppState {
-  // Live data
-  alerts: Alert[];
-  incidents: Incident[];
-  metrics: ReturnType<typeof generateRealtimeMetrics>;
-  notifications: AppNotification[];
+// ── Store state ───────────────────────────────────────────────────────────────
 
-  // Settings
+interface AppState {
+  // Connection status
+  backendConnected: boolean;
+  backendChecked: boolean;
+  lastUpdate: string | null;
+
+  // Real live data
+  alerts: RealAlert[];
+  incidents: Incident[];
+  metrics: RealMetrics | null;
+  connections: NetworkConnection[];
+  processes: RealProcess[];
+  logs: RealLogEntry[];
+  devices: ArpDevice[];
+  listeningPorts: { port: number; ip: string; process: string; pid: number }[];
+
+  // App state
+  notifications: AppNotification[];
   settings: AppSettings;
 
-  // Actions — Alerts
-  addAlert: (alert: Alert) => void;
+  // Actions
+  connectBackend: () => void;
+  disconnectBackend: () => void;
+
   acknowledgeAlert: (id: string) => void;
   resolveAlert: (id: string) => void;
-
-  // Actions — Incidents
-  addIncident: (incident: Incident) => void;
-  updateIncidentStatus: (id: string, status: Incident['status']) => void;
   escalateAlertToIncident: (alertId: string) => void;
+  updateIncidentStatus: (id: string, status: Incident['status']) => void;
 
-  // Actions — Metrics
-  refreshMetrics: () => void;
-
-  // Actions — Notifications
   addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
   markAllRead: () => void;
   unreadCount: () => number;
-
-  // Actions — Settings
   updateSettings: (patch: Partial<AppSettings>) => void;
+
+  // Internal
+  _applySnapshot: (snapshot: BackendSnapshot) => void;
 }
 
-// ─── Initial Data ─────────────────────────────────────────────────────────────
-const INITIAL_ALERTS: Alert[] = Array.from({ length: 30 }, () => generateMockAlert());
-const INITIAL_INCIDENTS = generateMockIncidents(15);
-const INITIAL_METRICS = generateRealtimeMetrics();
+// ── Socket singleton (one WS for entire app lifetime) ────────────────────────
+let _socket: BackendSocket | null = null;
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ── Store ─────────────────────────────────────────────────────────────────────
 export const useAppStore = create<AppState>((set, get) => ({
-  alerts: INITIAL_ALERTS,
-  incidents: INITIAL_INCIDENTS,
-  metrics: INITIAL_METRICS,
-  notifications: INITIAL_ALERTS
-    .filter((a) => a.severity === 'critical' || a.severity === 'high')
-    .slice(0, 5)
-    .map((a) => ({
-      id: a.id,
-      title: a.title,
-      severity: a.severity,
-      timestamp: a.timestamp,
-      read: false,
-    })),
+  backendConnected: false,
+  backendChecked: false,
+  lastUpdate: null,
+
+  alerts: [],
+  incidents: [],
+  metrics: null,
+  connections: [],
+  processes: [],
+  logs: [],
+  devices: [],
+  listeningPorts: [],
+  notifications: [],
 
   settings: {
     notifyOnCritical: true,
@@ -92,35 +119,82 @@ export const useAppStore = create<AppState>((set, get) => ({
     highThreshold: 70,
     mediumThreshold: 40,
     integrations: [
-      { name: 'Splunk SIEM', connected: true },
-      { name: 'Email Gateway', connected: true },
-      { name: 'SOAR Platform', connected: true },
-      { name: 'Vulnerability Scanner', connected: false },
-      { name: 'Threat Intelligence Feed', connected: true },
+      { name: 'Emerging Threats Blocklist', connected: true },
+      { name: 'ipapi.co Geolocation', connected: true },
+      { name: 'psutil System Monitor', connected: true },
+      { name: 'macOS Log Stream', connected: true },
+      { name: 'AbuseIPDB (optional)', connected: false },
     ],
   },
 
-  // ── Alert actions ───────────────────────────────────────────────────────────
-  addAlert: (alert) =>
-    set((s) => {
-      const newAlerts = [alert, ...s.alerts.slice(0, 49)];
-      // Push notification for critical/high
-      if (alert.severity === 'critical' || alert.severity === 'high') {
-        const notif: AppNotification = {
-          id: `notif-${Date.now()}`,
-          title: alert.title,
-          severity: alert.severity,
-          timestamp: alert.timestamp,
-          read: false,
-        };
-        return {
-          alerts: newAlerts,
-          notifications: [notif, ...s.notifications.slice(0, 19)],
-        };
-      }
-      return { alerts: newAlerts };
-    }),
+  // ── Backend connection ──────────────────────────────────────────────────────
+  connectBackend: () => {
+    if (_socket) return; // already connected
 
+    // First check if backend is reachable
+    checkBackendAlive().then((alive) => {
+      set({ backendChecked: true, backendConnected: alive });
+    });
+
+    _socket = new BackendSocket((snapshot) => {
+      get()._applySnapshot(snapshot);
+    });
+    _socket.connect();
+
+    // Keep-alive ping every 10 seconds
+    setInterval(() => _socket?.ping(), 10000);
+  },
+
+  disconnectBackend: () => {
+    _socket?.disconnect();
+    _socket = null;
+    set({ backendConnected: false });
+  },
+
+  // ── Snapshot handler ────────────────────────────────────────────────────────
+  _applySnapshot: (snapshot: BackendSnapshot) => {
+    const state = get();
+
+    // Merge incoming alerts with manually-status-updated ones
+    const existingById = new Map(state.alerts.map((a) => [a.id, a]));
+    for (const a of snapshot.all_alerts) {
+      if (!existingById.has(a.id)) {
+        existingById.set(a.id, a);
+      }
+      // Don't override status if analyst already acknowledged/resolved it
+    }
+    const mergedAlerts = Array.from(existingById.values()).slice(0, 200);
+
+    // Build notifications for new critical/high alerts
+    const newNotifs: AppNotification[] = snapshot.new_alerts
+      .filter((a) => {
+        if (a.severity === 'critical') return state.settings.notifyOnCritical;
+        if (a.severity === 'high') return state.settings.notifyOnHigh;
+        return false;
+      })
+      .map((a) => ({
+        id: `notif-${a.id}`,
+        title: a.title,
+        severity: a.severity,
+        timestamp: new Date(a.timestamp),
+        read: false,
+      }));
+
+    set({
+      backendConnected: true,
+      lastUpdate: snapshot.timestamp,
+      alerts: mergedAlerts,
+      metrics: snapshot.metrics,
+      connections: snapshot.connections,
+      processes: snapshot.processes,
+      logs: snapshot.logs,
+      devices: snapshot.devices,
+      listeningPorts: snapshot.listening_ports,
+      notifications: [...newNotifs, ...state.notifications].slice(0, 30),
+    });
+  },
+
+  // ── Alert actions ───────────────────────────────────────────────────────────
   acknowledgeAlert: (id) =>
     set((s) => ({
       alerts: s.alerts.map((a) =>
@@ -132,17 +206,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       alerts: s.alerts.map((a) =>
         a.id === id ? { ...a, status: 'resolved' as const } : a
-      ),
-    })),
-
-  // ── Incident actions ────────────────────────────────────────────────────────
-  addIncident: (incident) =>
-    set((s) => ({ incidents: [incident, ...s.incidents] })),
-
-  updateIncidentStatus: (id, status) =>
-    set((s) => ({
-      incidents: s.incidents.map((inc) =>
-        inc.id === id ? { ...inc, status, lastUpdated: new Date() } : inc
       ),
     })),
 
@@ -158,7 +221,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastUpdated: new Date(),
       affectedSystems: alert.affectedAssets,
       investigator: 'Unassigned',
-      description: `Escalated from alert ${alert.id}. ${alert.description}`,
+      description: alert.description,
       evidenceCount: 1,
       relatedAlerts: [alertId],
     };
@@ -170,20 +233,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  // ── Metrics ────────────────────────────────────────────────────────────────
-  refreshMetrics: () => set({ metrics: generateRealtimeMetrics() }),
+  updateIncidentStatus: (id, status) =>
+    set((s) => ({
+      incidents: s.incidents.map((inc) =>
+        inc.id === id ? { ...inc, status, lastUpdated: new Date() } : inc
+      ),
+    })),
 
-  // ── Notifications ──────────────────────────────────────────────────────────
+  // ── Notifications ───────────────────────────────────────────────────────────
   addNotification: (n) =>
     set((s) => ({
       notifications: [
-        {
-          ...n,
-          id: `notif-${Date.now()}`,
-          timestamp: new Date(),
-          read: false,
-        },
-        ...s.notifications.slice(0, 19),
+        { ...n, id: `notif-${Date.now()}`, timestamp: new Date(), read: false },
+        ...s.notifications.slice(0, 29),
       ],
     })),
 
@@ -194,7 +256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   unreadCount: () => get().notifications.filter((n) => !n.read).length,
 
-  // ── Settings ───────────────────────────────────────────────────────────────
+  // ── Settings ────────────────────────────────────────────────────────────────
   updateSettings: (patch) =>
     set((s) => ({ settings: { ...s.settings, ...patch } })),
 }));

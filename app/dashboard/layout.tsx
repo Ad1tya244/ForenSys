@@ -76,11 +76,13 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const { metrics, notifications, unreadCount, markAllRead } = useAppStore();
+  const { metrics, notifications, unreadCount, markAllRead, connectBackend, backendConnected } = useAppStore();
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    connectBackend();
+  }, [connectBackend]);
+
 
   const currentPage = navItems.find(
     (item) =>
@@ -202,12 +204,22 @@ export default function DashboardLayout({
 
           {/* Right side controls */}
           <div className="flex items-center gap-3">
-            {/* Threat Level */}
+            {/* Backend Connection Status */}
             {mounted && (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/50 border border-border/50">
-                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${threatLevelColors[metrics.threatLevel] ?? 'bg-gray-500'}`} />
-                <span className={`text-xs font-semibold ${threatLevelText[metrics.threatLevel] ?? 'text-gray-400'}`}>
-                  {metrics.threatLevel.toUpperCase()}
+                <div className={`w-1.5 h-1.5 rounded-full ${backendConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                <span className={`text-[10px] font-semibold font-mono ${backendConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  {backendConnected ? 'API: ONLINE' : 'API: OFFLINE'}
+                </span>
+              </div>
+            )}
+
+            {/* Threat Level */}
+            {mounted && metrics && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/50 border border-border/50">
+                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${threatLevelColors[metrics.threat_level] ?? 'bg-gray-500'}`} />
+                <span className={`text-xs font-semibold ${threatLevelText[metrics.threat_level] ?? 'text-gray-400'}`}>
+                  {(metrics.threat_level || 'low').toUpperCase()}
                 </span>
               </div>
             )}

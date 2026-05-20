@@ -82,18 +82,26 @@ export default function ForensicsPage() {
       </div>
 
       {/* Filters */}
-      <div className="glass rounded-lg p-4 border border-border/50 flex gap-2 flex-wrap">
-        {['all', 'File', 'Memory Dump', 'Network Capture', 'Registry Export', 'Log File'].map((type) => (
-          <Button
-            key={type}
-            variant={filter === type ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFilter(type)}
-            className={filter === type ? 'bg-accent text-accent-foreground border-0' : 'border-border/50'}
-          >
-            {type}
-          </Button>
-        ))}
+      <div className="flex gap-2 flex-wrap font-sans items-center">
+        {['all', 'File', 'Memory Dump', 'Network Capture', 'Registry Export', 'Log File'].map((type) => {
+          const count = type === 'all'
+            ? evidenceItems.length
+            : evidenceItems.filter(item => item.type === type).length;
+          return (
+            <button
+              key={type}
+              onClick={() => setFilter(type)}
+              className={`h-7 px-3 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.01] active:scale-[0.97] ${
+                filter === type
+                  ? 'bg-accent/20 text-accent border-accent/50'
+                  : 'bg-transparent border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
+              }`}
+            >
+              {type}
+              <span className="ml-1 opacity-60 font-mono text-[10px]">{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

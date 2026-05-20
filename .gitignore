@@ -46,3 +46,12 @@ __v0_jsx-dev-runtime.ts
 .idea/
 .vscode/
 *.swp
+
+# Python backend
+backend/.venv/
+backend/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.python-version

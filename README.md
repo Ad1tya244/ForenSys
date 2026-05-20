@@ -1,91 +1,102 @@
 # ForenSys - Enterprise SOC Platform
 
-ForenSys is a modern, real-time Security Operations Center (SOC) dashboard and response platform built for high-performance security teams. It offers a comprehensive suite of tools for monitoring alerts, investigating incidents, automating responses, and analyzing threat intelligence, all driven by an interactive cyber-themed user interface.
+ForenSys is a modern, real-time Security Operations Center (SOC) dashboard and response platform built for high-performance security teams. It integrates a **real-time system telemetry engine** written in Python (FastAPI) with an interactive Next.js (TypeScript) cyber-themed dashboard using WebSockets.
+
+---
 
 ## 🚀 Features
 
-ForenSys features a fully interactive global state simulating live SOC operations:
+ForenSys streams real host telemetry and runs local threat analysis to drive all dashboard components:
 
-- **Command Center Dashboard**: Live KPIs, threat level indicators, alert trends (Area/Bar charts), and real-time streaming alert consoles.
-- **Alert Triage & Escalation**: End-to-end alert management with severity filters, deep-dive investigation sheets, and single-click escalation to Incidents.
-- **Incident Response**: Master/detail incident views with timeline tracking, status KPIs, and interactive resolution workflows.
-- **Threat Intelligence**: IOC (Indicator of Compromise) feed with confidence scoring, MITRE ATT&CK tactic mapping, and watchlist support.
-- **Live Threat Hunting**: Interactive hunt console featuring simulated terminal outputs, pre-built KQL/Splunk style queries, and live result tables.
-- **Security Analytics**: Rich visualizations including MTTD/MTTR trends, asset risk distribution (Radar charts), and historical incident analysis.
-- **Network Architecture Map**: Interactive SVG-based network topology mapping that highlights compromised nodes and encrypted traffic pathways.
-- **SOAR Automation Rules**: "If/Then" rule engine interface to manage automated containment, notification, and enrichment workflows.
-- **Log Explorer**: Live streaming log viewer with pause/resume functionality, severity filtering, and JSON payload inspection.
-- **Context-Aware AI Copilot**: A built-in "Security Assistant" that analyzes live store data to answer questions about active alerts, threat levels, and attack chain reconstruction.
-- **RBAC**: Role-based access control interface with granular permission toggles and role KPIs.
+- **Command Center Dashboard**: Live host metrics (real CPU, RAM, Disk, Uptime), threat level gauges, real-time alert tickers, and connection metrics.
+- **Real-Time Network Telemetry**: Streams active TCP/UDP connections and local listening sockets. Uses a non-root `lsof` fallback collector on macOS to map sockets to their owner process names and PIDs.
+- **Threat Intelligence Feed**: Analyzes connections and alerts against the Emerging Threats IP blocklist (1,600+ IPs loaded at startup). Automatically geolocates public IPs using `ipapi.co` with local LRU caching.
+- **Local Asset Discovery**: Discovers devices on the local network in real-time via local ARP table extraction.
+- **Security Analytics**: Visualizes Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), asset risk distribution (Radar charts), and alert severity trends.
+- **Network Architecture Map**: Interactive SVG-based network topology mapping that highlights compromised nodes, local interfaces, and traffic pathways.
+- **Log Explorer**: Live streaming log viewer capturing active system log streams with pause/resume controls, level filters, and JSON payload inspect.
+- **Context-Aware AI Copilot**: A built-in Security Assistant analyzing live SOC state to reconstruct attack chains and answer analysis questions.
+- **SOAR Automation & RBAC**: Automated "If/Then" containment rules and role-based access control permission configurations.
+
+---
 
 ## 🛠 Tech Stack
 
-- **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) with custom Cyber/Glassmorphism tokens
-- **State Management**: [Zustand](https://github.com/pmndrs/zustand)
-- **UI Components**: [Shadcn UI](https://ui.shadcn.com/) / Radix UI
-- **Animations**: [Framer Motion](https://www.framer.com/motion/)
-- **Charts**: [Recharts](https://recharts.org/)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **Notifications**: [Sonner](https://sonner.emilkowal.ski/)
+### Frontend (Next.js)
+- **Framework**: Next.js 16 (App Router / Turbopack)
+- **Language**: TypeScript
+- **State Management**: Zustand
+- **Real-Time Delivery**: WebSocket Client (`lib/api-client.ts`)
+- **Styling**: Tailwind CSS & Glassmorphism design tokens
+- **Visuals**: Shadcn UI, Framer Motion, Recharts, Lucide Icons, Sonner
+
+### Backend (Python)
+- **Framework**: FastAPI & Uvicorn
+- **Collectors**: `psutil` (System resources, fallback metrics), `lsof` / `netstat` (Socket-to-Process mapping), `arp` (Device discovery)
+- **Threat Intelligence**: Emerging Threats Blocklist IP loader & IP Geolocator (`ipapi.co`)
+- **Transport**: JSON-serialized WebSocket server
+
+---
 
 ## 📦 Getting Started
 
 ### Prerequisites
-Make sure you have Node.js (v18+) and npm installed on your machine.
+- **Node.js**: v18+ and `npm`
+- **Python**: v3.10+ (with `venv` support)
 
-### Installation
+### Installation & Launch
 
-1. **Clone the repository:**
+1. **Clone the Repository:**
    ```bash
    git clone https://github.com/yourusername/forensys.git
    cd forensys
    ```
 
-2. **Install dependencies:**
+2. **Install Frontend Dependencies:**
    ```bash
    npm install
    ```
 
-3. **Start the development server:**
+3. **Start the Unified Dev Environment:**
    ```bash
    npm run dev
    ```
+   *Note: This launcher script automatically initializes the Python virtual environment in `backend/.venv`, installs requirements from `backend/requirements.txt`, and spins up both the FastAPI backend (port `8000`) and the Next.js dev server (port `3000`) concurrently.*
 
-4. **Open the application:**
-   Navigate to [http://localhost:3000](http://localhost:3000) in your browser. The application will automatically redirect you to the main `/dashboard`.
+4. **Access the SOC Console:**
+   Open [http://localhost:3000](http://localhost:3000) in your browser. The dashboard will connect to the backend WebSocket automatically.
+
+---
 
 ## 📁 Project Structure
 
-- `app/` - Next.js App Router pages and layouts.
-  - `app/dashboard/` - Contains all core SOC modules (alerts, analytics, hunting, etc.).
-- `components/` - Reusable UI components.
-  - `components/ui/` - Shadcn UI base components.
-  - `components/copilot/` - The Context-Aware AI Security Assistant.
-- `lib/` - Utility functions, mock data generators, and store definitions.
-  - `lib/app-store.ts` - The global Zustand store managing live application state.
-  - `lib/mock-data.ts` - Generators and interfaces for the simulated data stream.
-
-## 🔧 Building for Production
-
-To create an optimized production build, run:
-```bash
-npm run build
+```text
+├── app/                      # Next.js App Router Pages
+│   └── dashboard/            # SOC Modules (Alerts, Analytics, Threat Intel, etc.)
+├── backend/                  # Python Telemetry Backend
+│   ├── analyzers/            # Threat detection & IP blocklist matching
+│   ├── collectors/           # Telemetry scripts (system, logs, network, processes)
+│   ├── main.py               # FastAPI server entrypoint
+│   └── requirements.txt      # Backend Python dependencies
+├── components/               # React UI Components
+│   ├── copilot/              # AI Security Assistant panels
+│   └── ui/                   # Shared design system components
+├── lib/                      # Next.js client integration
+│   ├── api-client.ts         # WebSocket / REST client setup
+│   └── app-store.ts          # Zustand global state manager
+└── scripts/                  # Development automation scripts
 ```
 
-To start the production server:
-```bash
-npm start
-```
+---
 
 ## 🎨 Design Philosophy
 
-ForenSys embraces a "Cyber SOC" aesthetic, designed specifically for dark environments with:
-- High-contrast alert coloring (Critical: Red, High: Orange, Medium: Yellow).
-- Custom animated background utilities (`cyber-grid`, `scan-line`).
-- Blurred glassmorphism (`glass` utility) to provide depth to modular cards and panels without overwhelming the data visualizations.
-- Clean typography and monospace fonts for logs, IPs, and code blocks to improve scannability for analysts.
+ForenSys uses a high-contrast dark "cyber deck" aesthetic optimized for security analysts:
+- **Alert Prioritization**: Explicit alert color tokens (Critical: Red, High: Orange, Medium: Yellow).
+- **Interactive Layers**: Glassmorphic backings (`glass` class) and hover interactions (`hover:scale-[1.01]`) to maintain usability during high-intensity alerts.
+- **Monospaced Scannability**: IP addresses, logs, process listings, and terminal consoles use clean monospace typography for rapid technical analysis.
+
+---
 
 ## 📄 License
-This project is for demonstration and portfolio purposes.
+This project is for demonstration and security analysis portfolio purposes.

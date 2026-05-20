@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Network, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Network, AlertTriangle, CheckCircle2, RefreshCw, Cpu, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
+import { useAppStore } from '@/lib/app-store';
 
 interface NetworkNode {
   id: string;
@@ -76,11 +77,19 @@ const TYPE_SHAPES: Record<string, { emoji: string; color: string }> = {
 };
 
 export default function ArchitecturePage() {
+  const { devices } = useAppStore();
   const [hovered, setHovered] = useState<NetworkNode | null>(null);
   const [selected, setSelected] = useState<NetworkNode | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const viewBox = '0 0 800 560';
   const activeNode = selected || hovered;
+
+  if (!mounted) return null;
 
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5">
@@ -91,7 +100,7 @@ export default function ArchitecturePage() {
             <Network className="w-6 h-6 text-accent" />
             Network Architecture
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Interactive topology view — hover or click nodes for details</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Interactive topology view and live local discovered LAN endpoints</p>
         </div>
         <div className="flex items-center gap-3">
           {Object.entries({ healthy: '22c55e', 'at-risk': 'eab308', compromised: 'ef4444' }).map(([status, color]) => (
@@ -104,108 +113,139 @@ export default function ArchitecturePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* SVG Topology */}
-        <div className="lg:col-span-3 glass rounded-lg border border-border/50 overflow-hidden">
-          <svg viewBox={viewBox} className="w-full" style={{ minHeight: 400 }}>
-            {/* Grid background */}
-            <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,200,255,0.04)" strokeWidth="1" />
-              </pattern>
-            </defs>
-            <rect width="800" height="560" fill="url(#grid)" />
+        {/* SVG Topology & LAN Discovery Row */}
+        <div className="lg:col-span-3 space-y-4">
+          <div className="glass rounded-lg border border-border/50 overflow-hidden">
+            <svg viewBox={viewBox} className="w-full" style={{ minHeight: 400 }}>
+              {/* Grid background */}
+              <defs>
+                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,200,255,0.04)" strokeWidth="1" />
+                </pattern>
+              </defs>
+              <rect width="800" height="560" fill="url(#grid)" />
 
-            {/* Edges */}
-            {EDGES.map((edge) => {
-              const from = NODES.find((n) => n.id === edge.from)!;
-              const to = NODES.find((n) => n.id === edge.to)!;
-              const isAlerted =
-                NODES.find((n) => n.id === edge.from)?.status === 'compromised' ||
-                NODES.find((n) => n.id === edge.to)?.status === 'compromised';
-              return (
-                <g key={`${edge.from}-${edge.to}`}>
-                  <line
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={isAlerted ? '#ef4444' : edge.encrypted ? '#00c8ff' : 'rgba(255,255,255,0.2)'}
-                    strokeWidth={isAlerted ? 2 : 1}
-                    strokeDasharray={edge.encrypted ? '4 3' : undefined}
-                    strokeOpacity={0.6}
-                  />
-                  {edge.label && (
-                    <text
-                      x={(from.x + to.x) / 2 + 4}
-                      y={(from.y + to.y) / 2 - 4}
-                      fill="#666"
-                      fontSize={8}
-                      fontFamily="monospace"
-                    >
-                      {edge.label}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+              {/* Edges */}
+              {EDGES.map((edge) => {
+                const from = NODES.find((n) => n.id === edge.from)!;
+                const to = NODES.find((n) => n.id === edge.to)!;
+                const isAlerted =
+                  NODES.find((n) => n.id === edge.from)?.status === 'compromised' ||
+                  NODES.find((n) => n.id === edge.to)?.status === 'compromised';
+                return (
+                  <g key={`${edge.from}-${edge.to}`}>
+                    <line
+                      x1={from.x}
+                      y1={from.y}
+                      x2={to.x}
+                      y2={to.y}
+                      stroke={isAlerted ? '#ef4444' : edge.encrypted ? '#00c8ff' : 'rgba(255,255,255,0.2)'}
+                      strokeWidth={isAlerted ? 2 : 1}
+                      strokeDasharray={edge.encrypted ? '4 3' : undefined}
+                      strokeOpacity={0.6}
+                    />
+                    {edge.label && (
+                      <text
+                        x={(from.x + to.x) / 2 + 4}
+                        y={(from.y + to.y) / 2 - 4}
+                        fill="#666"
+                        fontSize={8}
+                        fontFamily="monospace"
+                      >
+                        {edge.label}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
 
-            {/* Nodes */}
-            {NODES.map((node) => {
-              const isActive = activeNode?.id === node.id;
-              const typeInfo = TYPE_SHAPES[node.type];
-              return (
-                <g
-                  key={node.id}
-                  transform={`translate(${node.x}, ${node.y})`}
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={() => setHovered(node)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => setSelected(selected?.id === node.id ? null : node)}
-                >
-                  {/* Glow ring for compromised */}
-                  {node.status === 'compromised' && (
-                    <circle r={22} fill="none" stroke="#ef4444" strokeWidth={2} opacity={0.4}>
-                      <animate attributeName="r" values="18;24;18" dur="2s" repeatCount="indefinite" />
-                      <animate attributeName="opacity" values="0.5;0.1;0.5" dur="2s" repeatCount="indefinite" />
-                    </circle>
-                  )}
-
-                  {/* Node circle */}
-                  <circle
-                    r={18}
-                    fill={isActive ? `${STATUS_COLORS[node.status]}22` : 'rgba(15,23,42,0.9)'}
-                    stroke={isActive ? STATUS_COLORS[node.status] : `${STATUS_COLORS[node.status]}88`}
-                    strokeWidth={isActive ? 2 : 1.5}
-                  />
-
-                  {/* Status dot */}
-                  <circle cx={13} cy={-13} r={5} fill={STATUS_COLORS[node.status]} />
-
-                  {/* Emoji icon */}
-                  <text textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ userSelect: 'none' }}>
-                    {typeInfo.emoji}
-                  </text>
-
-                  {/* Label */}
-                  <text
-                    textAnchor="middle"
-                    y={26}
-                    fill={isActive ? '#e2e8f0' : '#9ca3af'}
-                    fontSize={9}
-                    fontFamily="monospace"
-                    fontWeight={isActive ? 'bold' : 'normal'}
-                    style={{ userSelect: 'none' }}
+              {/* Nodes */}
+              {NODES.map((node) => {
+                const isActive = activeNode?.id === node.id;
+                const typeInfo = TYPE_SHAPES[node.type];
+                return (
+                  <g
+                    key={node.id}
+                    transform={`translate(${node.x}, ${node.y})`}
+                    style={{ cursor: 'pointer' }}
+                    onMouseEnter={() => setHovered(node)}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={() => setSelected(selected?.id === node.id ? null : node)}
                   >
-                    {node.label}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+                    {/* Glow ring for compromised */}
+                    {node.status === 'compromised' && (
+                      <circle r={22} fill="none" stroke="#ef4444" strokeWidth={2} opacity={0.4}>
+                        <animate attributeName="r" values="18;24;18" dur="2s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" values="0.5;0.1;0.5" dur="2s" repeatCount="indefinite" />
+                      </circle>
+                    )}
+
+                    {/* Node circle */}
+                    <circle
+                      r={18}
+                      fill={isActive ? `${STATUS_COLORS[node.status]}22` : 'rgba(15,23,42,0.9)'}
+                      stroke={isActive ? STATUS_COLORS[node.status] : `${STATUS_COLORS[node.status]}88`}
+                      strokeWidth={isActive ? 2 : 1.5}
+                    />
+
+                    {/* Status dot */}
+                    <circle cx={13} cy={-13} r={5} fill={STATUS_COLORS[node.status]} />
+
+                    {/* Emoji icon */}
+                    <text textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ userSelect: 'none' }}>
+                      {typeInfo.emoji}
+                    </text>
+
+                    {/* Label */}
+                    <text
+                      textAnchor="middle"
+                      y={26}
+                      fill={isActive ? '#e2e8f0' : '#9ca3af'}
+                      fontSize={9}
+                      fontFamily="monospace"
+                      fontWeight={isActive ? 'bold' : 'normal'}
+                      style={{ userSelect: 'none' }}
+                    >
+                      {node.label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {/* ARP Devices List */}
+          <div className="glass rounded-lg border border-border/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                <RefreshCw className="w-4 h-4 text-accent animate-spin-slow" />
+                Live LAN Discovered Devices (ARP Cache Scan)
+              </h2>
+              <span className="text-xs text-muted-foreground font-mono">{devices.length} Devices Discovered</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {devices.map((device, i) => (
+                <div key={i} className="p-2.5 bg-card/40 rounded border border-border/50 flex items-center gap-3">
+                  <Server className="w-5 h-5 text-accent flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-foreground truncate">{device.hostname}</p>
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">{device.ip}</p>
+                    <p className="text-[9px] text-muted-foreground font-mono truncate">MAC: {device.mac}</p>
+                  </div>
+                </div>
+              ))}
+              {devices.length === 0 && (
+                <div className="col-span-full py-8 text-center text-xs text-muted-foreground font-mono">
+                  [SCANNING ARP TABLE FOR LOCAL NETWORK PEERS...]
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Node Details Panel */}
-        <div className="glass rounded-lg border border-border/50 p-4 space-y-4">
+        <div className="glass rounded-lg border border-border/50 p-4 space-y-4 h-fit">
           <h2 className="text-sm font-semibold text-foreground">Node Details</h2>
           {!activeNode ? (
             <div className="text-center py-8">

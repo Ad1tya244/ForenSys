@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAppStore } from '@/lib/app-store';
-import { Alert } from '@/lib/mock-data';
+import { useAppStore, Alert } from '@/lib/app-store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -130,7 +129,7 @@ export default function AlertsPage() {
       </div>
 
       {/* Filters */}
-      <div className="glass rounded-lg p-3 border border-border/50 space-y-3">
+      <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
@@ -146,21 +145,29 @@ export default function AlertsPage() {
           </Button>
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {['all', 'critical', 'high', 'medium', 'low', 'new', 'acknowledged', 'investigating', 'resolved'].map((f) => (
-            <Button
-              key={f}
-              variant={filter === f ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter(f)}
-              className={`h-6 text-xs px-2 ${
-                filter === f
-                  ? 'bg-accent text-accent-foreground border-0'
-                  : 'border-border/50'
-              }`}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Button>
-          ))}
+          {['all', 'critical', 'high', 'medium', 'low', 'new', 'acknowledged', 'investigating', 'resolved'].map((f) => {
+            const count = f === 'all'
+              ? alerts.length
+              : ['critical', 'high', 'medium', 'low'].includes(f)
+              ? alerts.filter(a => a.severity === f).length
+              : alerts.filter(a => a.status === f).length;
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`h-7 px-3 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.01] active:scale-[0.97] ${
+                  filter === f
+                    ? 'bg-accent/20 text-accent border-accent/50'
+                    : 'bg-transparent border border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
+                }`}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+                <span className="ml-1 opacity-60 font-mono text-[10px]">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -196,7 +203,7 @@ export default function AlertsPage() {
                         </div>
                         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs opacity-75">
                           <span>Source: {alert.source}</span>
-                          <span>{alert.timestamp.toLocaleTimeString()}</span>
+                          <span>{new Date(alert.timestamp).toLocaleTimeString()}</span>
                         </div>
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {alert.affectedAssets.map((asset) => (
@@ -236,10 +243,10 @@ export default function AlertsPage() {
 
       {/* Alert Detail Sheet */}
       <Sheet open={!!selectedAlert} onOpenChange={(open) => !open && setSelectedAlert(null)}>
-        <SheetContent className="w-[480px] sm:w-[540px] bg-card border-border/50 overflow-y-auto">
+        <SheetContent className="w-[480px] sm:w-[540px] bg-card border-border/50 overflow-y-auto p-6">
           {selectedAlert && (
             <>
-              <SheetHeader className="space-y-3">
+              <SheetHeader className="space-y-3 p-0">
                 <div className="flex items-center gap-2">
                   <Badge className={getSeverityColor(selectedAlert.severity)}>
                     {selectedAlert.severity.toUpperCase()}
@@ -262,7 +269,7 @@ export default function AlertsPage() {
                     {[
                       { label: 'Source', value: selectedAlert.source },
                       { label: 'Alert ID', value: selectedAlert.id },
-                      { label: 'Timestamp', value: selectedAlert.timestamp.toLocaleString() },
+                      { label: 'Timestamp', value: new Date(selectedAlert.timestamp).toLocaleString() },
                     ].map((row) => (
                       <div key={row.label} className="flex items-center justify-between p-2.5 bg-card/50 rounded border border-border/50">
                         <span className="text-xs text-muted-foreground">{row.label}</span>
@@ -301,7 +308,7 @@ export default function AlertsPage() {
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</h3>
                   <div className="space-y-2">
                     <Button
-                      className="w-full bg-red-600 hover:bg-red-700 text-white gap-2"
+                      className="w-full bg-red-600 hover:bg-red-700 text-white gap-2 focus-visible:ring-red-600/50 focus-visible:border-red-600 focus-visible:ring-[3px]"
                       onClick={() => handleEscalate(selectedAlert.id, selectedAlert.title)}
                       disabled={selectedAlert.status === 'resolved'}
                     >

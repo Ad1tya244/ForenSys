@@ -57,12 +57,24 @@ export default function AnalyticsPage() {
     { name: 'Low', value: alerts.filter((a) => a.severity === 'low').length },
   ];
 
-  const topAssets = [
-    { name: 'WEBSERVER-01', alerts: 23, risk: 87 },
-    { name: 'DOMAIN-CONTROLLER', alerts: 19, risk: 94 },
-    { name: 'DBSERVER-02', alerts: 15, risk: 71 },
-    { name: 'FILESERVER-05', alerts: 12, risk: 65 },
-    { name: 'MAILSERVER-01', alerts: 9, risk: 52 },
+  // Compute top assets dynamically from alert frequency
+  const assetCounts = alerts.reduce((acc, alert) => {
+    alert.affectedAssets.forEach((asset) => {
+      acc[asset] = (acc[asset] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
+
+  const calculatedAssets = Object.entries(assetCounts)
+    .map(([name, count]) => {
+      const risk = Math.min(15 + count * 15, 100);
+      return { name, alerts: count, risk };
+    })
+    .sort((a, b) => b.alerts - a.alerts)
+    .slice(0, 5);
+
+  const topAssets = calculatedAssets.length > 0 ? calculatedAssets : [
+    { name: 'localhost (Host Machine)', alerts: 0, risk: 5 },
   ];
 
   const kpis = [
