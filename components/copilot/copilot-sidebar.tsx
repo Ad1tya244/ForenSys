@@ -147,7 +147,7 @@ export function CopilotSidebar() {
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 px-3 py-2">
+        <ScrollArea className="flex-1 min-h-0 px-3 py-2">
           <div className="space-y-3 pr-1">
             <AnimatePresence>
               {messages.map((msg) => (
