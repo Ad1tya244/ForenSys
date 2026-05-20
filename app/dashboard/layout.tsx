@@ -103,13 +103,13 @@ export default function DashboardLayout({
       <aside
         className={`${
           sidebarOpen ? 'w-56' : 'w-16'
-        } bg-sidebar border-r border-sidebar-border transition-all duration-300 flex flex-col overflow-hidden flex-shrink-0`}
+        } bg-sidebar border-r border-sidebar-border transition-all duration-300 flex flex-col overflow-hidden shrink-0`}
         style={{ background: 'hsl(220 15% 8%)' }}
       >
         {/* Logo */}
         <div className="p-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-sidebar-primary rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-9 h-9 bg-sidebar-primary rounded-lg flex items-center justify-center shrink-0">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <AnimatePresence>
@@ -145,7 +145,7 @@ export default function DashboardLayout({
                   }`}
                   title={!sidebarOpen ? item.label : undefined}
                 >
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-accent' : 'text-sidebar-foreground/70 group-hover:text-sidebar-foreground'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-accent' : 'text-sidebar-foreground/70 group-hover:text-sidebar-foreground'}`} />
                   <AnimatePresence>
                     {sidebarOpen && (
                       <motion.span
@@ -181,7 +181,7 @@ export default function DashboardLayout({
       {/* Right column */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="h-12 border-b border-border/50 flex items-center justify-between px-4 flex-shrink-0"
+        <header className="h-12 border-b border-border/50 flex items-center justify-between px-4 shrink-0"
           style={{ background: 'hsl(220 13% 9%)' }}>
           {/* Breadcrumb */}
           <div className="flex items-center gap-1 text-xs">
@@ -256,7 +256,7 @@ export default function DashboardLayout({
                     >
                       <div className="flex items-start gap-2">
                         <div
-                          className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
+                          className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
                             n.severity === 'critical'
                               ? 'bg-red-500'
                               : n.severity === 'high'
@@ -270,7 +270,7 @@ export default function DashboardLayout({
                             {n.timestamp.toLocaleTimeString()}
                           </p>
                         </div>
-                        {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0 mt-1.5" />}
+                        {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 mt-1.5" />}
                       </div>
                     </div>
                   ))}

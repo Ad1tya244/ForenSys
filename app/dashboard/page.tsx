@@ -244,7 +244,7 @@ export default function Dashboard() {
               </Button>
             </Link>
           </div>
-          <ScrollArea className="h-52 w-full [&_[data-slot=scroll-area-viewport]>div]:!block">
+          <ScrollArea className="h-52 w-full [&_[data-slot=scroll-area-viewport]>div]:block!">
             <div className="space-y-1.5 p-3 pr-5 w-full overflow-hidden">
               <AnimatePresence>
                 {recentAlerts.map((alert) => (
@@ -259,7 +259,7 @@ export default function Dashboard() {
                       <p className="text-xs font-semibold truncate">{alert.title}</p>
                       <p className="text-xs mt-0.5 opacity-70 truncate">{alert.description}</p>
                     </div>
-                    <span className="text-xs font-mono text-muted-foreground flex-shrink-0">
+                    <span className="text-xs font-mono text-muted-foreground shrink-0">
                       {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </motion.div>
@@ -293,7 +293,7 @@ export default function Dashboard() {
                     {incident.affectedSystems.length} systems · {incident.evidenceCount} evidence items
                   </p>
                 </div>
-                <Badge className={`${getSeverityColor(incident.severity)} text-xs flex-shrink-0`}>
+                <Badge className={`${getSeverityColor(incident.severity)} text-xs shrink-0`}>
                   {incident.severity}
                 </Badge>
               </div>

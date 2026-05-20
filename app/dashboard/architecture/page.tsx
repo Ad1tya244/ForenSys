@@ -227,7 +227,7 @@ export default function ArchitecturePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {devices.map((device, i) => (
                 <div key={i} className="p-2.5 bg-card/40 rounded border border-border/50 flex items-center gap-3">
-                  <Server className="w-5 h-5 text-accent flex-shrink-0" />
+                  <Server className="w-5 h-5 text-accent shrink-0" />
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-foreground truncate">{device.hostname}</p>
                     <p className="text-[10px] text-muted-foreground font-mono truncate">{device.ip}</p>

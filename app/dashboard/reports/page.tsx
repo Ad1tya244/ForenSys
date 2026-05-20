@@ -109,7 +109,7 @@ export default function ReportsPage() {
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <Icon className={`w-4 h-4 flex-shrink-0 ${selectedType === type.id ? 'text-accent' : ''}`} />
+                      <Icon className={`w-4 h-4 shrink-0 ${selectedType === type.id ? 'text-accent' : ''}`} />
                       <div>
                         <p className="text-xs font-medium">{type.label}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{type.desc}</p>
@@ -161,7 +161,7 @@ export default function ReportsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-xs text-accent hover:text-accent/80 p-1 flex-shrink-0"
+                      className="h-6 text-xs text-accent hover:text-accent/80 p-1 shrink-0"
                       onClick={() => toast.success('Downloading...', { description: report.name })}
                     >
                       <Download className="w-3.5 h-3.5" />

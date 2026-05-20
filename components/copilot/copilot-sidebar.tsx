@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useCopilotStore } from '@/lib/copilot-store';
-import { useAppStore } from '@/lib/app-store';
+import { useAppStore, Alert, Incident, RealMetrics } from '@/lib/app-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,25 +18,26 @@ const SUGGESTED_QUESTIONS = [
   'Avg response time this session',
 ];
 
-function generateContextResponse(input: string, alerts: ReturnType<typeof useAppStore>['alerts'], incidents: ReturnType<typeof useAppStore>['incidents'], metrics: ReturnType<typeof useAppStore>['metrics']): string {
+function generateContextResponse(input: string, alerts: Alert[], incidents: Incident[], metrics: RealMetrics | null): string {
   const q = input.toLowerCase();
 
   if (q.includes('critical') && q.includes('alert')) {
-    const count = alerts.filter((a) => a.severity === 'critical').length;
-    const recent = alerts.filter((a) => a.severity === 'critical').slice(0, 3);
-    return `There are currently **${count} critical alerts** active.\n\nMost recent:\n${recent.map((a) => `• ${a.title} (${a.source})`).join('\n')}\n\nI recommend prioritizing the DOMAIN-CONTROLLER and WEBSERVER-01 assets showing signs of lateral movement.`;
+    const count = alerts.filter((a: Alert) => a.severity === 'critical').length;
+    const recent = alerts.filter((a: Alert) => a.severity === 'critical').slice(0, 3);
+    return `There are currently **${count} critical alerts** active.\n\nMost recent:\n${recent.map((a: Alert) => `• ${a.title} (${a.source})`).join('\n')}\n\nI recommend prioritizing the DOMAIN-CONTROLLER and WEBSERVER-01 assets showing signs of lateral movement.`;
   }
 
   if (q.includes('open incident') || q.includes('incidents')) {
-    const open = incidents.filter((i) => i.status === 'open');
-    const investigating = incidents.filter((i) => i.status === 'investigating');
-    return `SOC Incident Status:\n• **${open.length} Open** — awaiting assignment\n• **${investigating.length} Investigating** — active response\n\nHighest priority: ${incidents.find((i) => i.severity === 'critical')?.title || 'No critical incidents'}\n\nRecommend reviewing open incidents older than 4 hours for escalation.`;
+    const open = incidents.filter((i: Incident) => i.status === 'open');
+    const investigating = incidents.filter((i: Incident) => i.status === 'investigating');
+    return `SOC Incident Status:\n• **${open.length} Open** — awaiting assignment\n• **${investigating.length} Investigating** — active response\n\nHighest priority: ${incidents.find((i: Incident) => i.severity === 'critical')?.title || 'No critical incidents'}\n\nRecommend reviewing open incidents older than 4 hours for escalation.`;
   }
 
   if (q.includes('threat level') || q.includes('status')) {
-    const level = metrics.threatLevel;
+    if (!metrics) return 'System metrics are currently unavailable.';
+    const level = metrics.threat_level || 'low';
     const colors: Record<string, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
-    return `Current threat level: ${colors[level] || '⚪'} **${level.toUpperCase()}**\n\n📊 Key metrics:\n• ${metrics.alertsPerSecond} alerts/sec incoming\n• ${metrics.devicesAtRisk} devices at risk\n• ${metrics.detectionRate}% detection rate\n• ${metrics.avgResponseTime} min avg response time\n\nSystem is ${level === 'critical' ? 'under active threat — immediate analyst attention required.' : level === 'high' ? 'elevated — close monitoring recommended.' : 'within normal operating parameters.'}`;
+    return `Current threat level: ${colors[level] || '⚪'} **${level.toUpperCase()}**\n\n📊 Key metrics:\n• ${metrics.connections_total} active connections\n• ${metrics.memory_percent}% memory usage\n• ${metrics.cpu_percent}% CPU usage\n\nSystem is ${level === 'critical' ? 'under active threat — immediate analyst attention required.' : level === 'high' ? 'elevated — close monitoring recommended.' : 'within normal operating parameters.'}`;
   }
 
   if (q.includes('attack chain') || q.includes('attack path')) {
@@ -49,7 +50,8 @@ function generateContextResponse(input: string, alerts: ReturnType<typeof useApp
   }
 
   if (q.includes('response time') || q.includes('mttr') || q.includes('mttd')) {
-    return `SOC Performance Metrics (current session):\n\n• **MTTR:** ${metrics.avgResponseTime} minutes\n• **Detection Rate:** ${metrics.detectionRate}%\n• **Alerts/sec:** ${metrics.alertsPerSecond}\n\nBenchmark: Industry average MTTR is 74 minutes. Your team is performing ${metrics.avgResponseTime < 74 ? 'above' : 'below'} industry average.\n\nRecommendation: Focus on automating initial triage to reduce response time further.`;
+    if (!metrics) return 'System metrics are currently unavailable.';
+    return `SOC Performance Metrics (current session):\n\n• **Active Connections:** ${metrics.connections_total}\n• **Memory Usage:** ${metrics.memory_percent}%\n• **CPU Usage:** ${metrics.cpu_percent}%\n\nYour team is performing within normal bounds.`;
   }
 
   if (q.includes('ioc') || q.includes('indicator')) {
@@ -62,7 +64,7 @@ function generateContextResponse(input: string, alerts: ReturnType<typeof useApp
 
   // Default response
   const fallbacks = [
-    `I've analyzed the current security posture. With ${alerts.filter((a) => a.severity === 'critical').length} critical alerts and ${incidents.filter((i) => i.status === 'open').length} open incidents, I recommend focusing on the DOMAIN-CONTROLLER which shows signs of credential dumping activity.`,
+    `I've analyzed the current security posture. With ${alerts.filter((a: Alert) => a.severity === 'critical').length} critical alerts and ${incidents.filter((i: Incident) => i.status === 'open').length} open incidents, I recommend focusing on the DOMAIN-CONTROLLER which shows signs of credential dumping activity.`,
     `Looking at the alert timeline, there's a pattern suggesting a coordinated attack starting from WEBSERVER-01, moving laterally to internal systems. The estimated breach window is 6 hours. Immediate containment is advised.`,
     `The attack chain analysis indicates this is consistent with APT techniques. The C2 communication to 185.220.101.45 has been active for ${Math.floor(Math.random() * 8) + 2} hours. I've correlated this with 3 known threat campaigns.`,
     `Based on ${incidents.length} active incidents and behavioral patterns, this appears to be a multi-stage intrusion. Recommend executing the Ransomware Response playbook as a precaution while investigation continues.`,
@@ -121,7 +123,7 @@ export function CopilotSidebar() {
         style={{ background: 'hsl(220 15% 9%)', borderLeft: '1px solid hsl(220 13% 18%)' }}
       >
         {/* Header */}
-        <div className="p-4 border-b border-border/50 flex items-center justify-between flex-shrink-0">
+        <div className="p-4 border-b border-border/50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-accent" />
@@ -156,7 +158,7 @@ export function CopilotSidebar() {
                   exit={{ opacity: 0 }}
                   className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5 ${
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold mt-0.5 ${
                     msg.role === 'user' ? 'bg-accent/20 text-accent' : 'bg-primary/20 text-primary'
                   }`}>
                     {msg.role === 'user' ? 'U' : <Sparkles className="w-3.5 h-3.5" />}
@@ -174,7 +176,7 @@ export function CopilotSidebar() {
 
             {isLoading && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2">
-                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                   <Sparkles className="w-3.5 h-3.5 text-primary" />
                 </div>
                 <div className="bg-card border border-border/50 rounded-lg p-3 flex gap-1 items-center">
@@ -208,7 +210,7 @@ export function CopilotSidebar() {
         )}
 
         {/* Input */}
-        <div className="p-3 border-t border-border/50 flex-shrink-0">
+        <div className="p-3 border-t border-border/50 shrink-0">
           <div className="flex gap-2">
             <Input
               value={input}

@@ -62,7 +62,7 @@ export default function IncidentsPage() {
     updateIncidentStatus(id, status);
     toast.success(`Incident status updated to "${status}"`);
     if (selectedIncident && selectedIncident.id === id) {
-      setSelectedIncident({ ...selectedIncident, status, lastUpdated: new Date().toISOString() });
+      setSelectedIncident({ ...selectedIncident, status, lastUpdated: new Date() });
     }
   };
 
@@ -173,7 +173,7 @@ export default function IncidentsPage() {
                     }`}
                   >
                     <div className="flex items-start gap-2">
-                      <Badge className={`${getSeverityColor(inc.severity)} text-[10px] py-0 px-1 flex-shrink-0 mt-0.5`} variant="outline">
+                      <Badge className={`${getSeverityColor(inc.severity)} text-[10px] py-0 px-1 shrink-0 mt-0.5`} variant="outline">
                         {inc.severity.toUpperCase()}
                       </Badge>
                       <div className="flex-1 min-w-0">

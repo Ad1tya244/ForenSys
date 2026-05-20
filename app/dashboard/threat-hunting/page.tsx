@@ -281,7 +281,7 @@ export default function ThreatHuntingPage() {
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-semibold text-foreground leading-tight">{query.name}</p>
                   <Badge
-                    className={`text-xs flex-shrink-0 ${
+                    className={`text-xs shrink-0 ${
                       query.risk === 'Critical'
                         ? 'bg-red-900/30 text-red-300 border-red-700/50'
                         : query.risk === 'High'

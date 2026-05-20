@@ -269,7 +269,7 @@ export default function AutomationPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <div className="flex flex-col items-end gap-2 shrink-0">
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleRule(rule.id); }}
                       className={`relative w-10 h-5 rounded-full transition-colors ${rule.enabled ? 'bg-accent' : 'bg-muted'}`}

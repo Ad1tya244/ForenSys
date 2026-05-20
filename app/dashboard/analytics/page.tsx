@@ -214,7 +214,7 @@ export default function AnalyticsPage() {
         <div className="space-y-2">
           {topAssets.map((asset, i) => (
             <div key={asset.name} className="flex items-center gap-3 p-2.5 bg-card/40 rounded border border-border/50">
-              <div className="w-5 h-5 rounded bg-accent/20 text-accent text-xs font-bold flex items-center justify-center flex-shrink-0">
+              <div className="w-5 h-5 rounded bg-accent/20 text-accent text-xs font-bold flex items-center justify-center shrink-0">
                 {i + 1}
               </div>
               <div className="flex-1 min-w-0">
@@ -232,7 +232,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <Badge
-                className={`text-xs flex-shrink-0 ${
+                className={`text-xs shrink-0 ${
                   asset.risk > 80 ? 'bg-red-900/30 text-red-300 border-red-700/50' :
                   asset.risk > 60 ? 'bg-orange-900/30 text-orange-300 border-orange-700/50' :
                   'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'

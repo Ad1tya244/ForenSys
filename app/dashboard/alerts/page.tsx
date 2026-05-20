@@ -193,11 +193,11 @@ export default function AlertsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${getSeverityDot(alert.severity)}`} />
+                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${getSeverityDot(alert.severity)}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <p className="font-semibold text-sm truncate">{alert.title}</p>
-                          <Badge variant="outline" className={`text-xs flex-shrink-0 ${getStatusBadge(alert.status)}`}>
+                          <Badge variant="outline" className={`text-xs shrink-0 ${getStatusBadge(alert.status)}`}>
                             {alert.status}
                           </Badge>
                         </div>
@@ -222,7 +222,7 @@ export default function AlertsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-border/50 h-7 text-xs flex-shrink-0"
+                      className="border-border/50 h-7 text-xs shrink-0"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedAlert(alert);

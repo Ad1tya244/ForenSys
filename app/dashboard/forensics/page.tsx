@@ -128,7 +128,7 @@ export default function ForensicsPage() {
                     }`}
                   >
                     <div className="flex items-start gap-2">
-                      <div className="w-8 h-8 rounded bg-accent/20 flex items-center justify-center flex-shrink-0 text-accent text-xs font-bold">
+                      <div className="w-8 h-8 rounded bg-accent/20 flex items-center justify-center shrink-0 text-accent text-xs font-bold">
                         {item.type[0]}
                       </div>
                       <div className="flex-1 min-w-0">

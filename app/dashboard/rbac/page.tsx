@@ -201,14 +201,14 @@ export default function RBACPage() {
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent text-xs font-bold flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent text-xs font-bold shrink-0">
                         {user.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
                           {user.status === 'inactive' && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground flex-shrink-0" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground shrink-0" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -318,7 +318,7 @@ export default function RBACPage() {
                               : 'border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
                           }`}
                         >
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                             hasIt ? 'bg-accent border-accent text-accent-foreground' : 'border-border/60'
                           }`}>
                             {hasIt && <Check className="w-2.5 h-2.5" />}
