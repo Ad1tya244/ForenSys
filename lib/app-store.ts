@@ -44,6 +44,7 @@ export interface EvidenceItem {
   collectedAt: Date;
   chain: string[];
   status: 'Authenticated' | 'Sealed';
+  payload?: any;
 }
 
 function generateSimpleHash(str: string): string {
@@ -111,6 +112,7 @@ interface AppState {
   escalateAlertToIncident: (alertId: string) => void;
   raiseIncidentAndCaptureForensics: (type: 'alert' | 'log' | 'network' | 'process' | 'connection', data: any) => void;
   updateIncidentStatus: (id: string, status: Incident['status']) => void;
+  authenticateEvidenceItem: (id: string) => void;
 
   addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
   markAllRead: () => void;
@@ -286,6 +288,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collectedAt: new Date(),
         chain: ['Captured', 'Hashed', 'Sealed'],
         status: 'Sealed',
+        payload: data,
       };
     } else if (type === 'log') {
       incident = {
@@ -311,6 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collectedAt: new Date(),
         chain: ['Captured', 'Hashed', 'Sealed'],
         status: 'Sealed',
+        payload: data,
       };
     } else if (type === 'network') {
       incident = {
@@ -336,6 +340,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collectedAt: new Date(),
         chain: ['Captured', 'Hashed', 'Sealed'],
         status: 'Sealed',
+        payload: data,
       };
     } else if (type === 'process') {
       incident = {
@@ -361,6 +366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collectedAt: new Date(),
         chain: ['Captured', 'Hashed', 'Sealed'],
         status: 'Sealed',
+        payload: data,
       };
     } else { // connection
       incident = {
@@ -386,6 +392,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collectedAt: new Date(),
         chain: ['Captured', 'Hashed', 'Sealed'],
         status: 'Sealed',
+        payload: data,
       };
     }
 
@@ -411,6 +418,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       incidents: s.incidents.map((inc) =>
         inc.id === id ? { ...inc, status, lastUpdated: new Date() } : inc
       ),
+    })),
+
+  authenticateEvidenceItem: (id) =>
+    set((s) => ({
+      evidenceItems: s.evidenceItems.map((item) => {
+        if (item.id === id && item.status !== 'Authenticated') {
+          return {
+            ...item,
+            status: 'Authenticated' as const,
+            chain: [...item.chain, 'Verified Integrity Checksum', 'Authenticated'],
+          };
+        }
+        return item;
+      }),
     })),
 
   // ── Notifications ───────────────────────────────────────────────────────────

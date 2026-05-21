@@ -1,17 +1,254 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Lock, Hash, Calendar, User } from 'lucide-react';
+import { Lock, Hash, Calendar, User, FileCode, Copy, Cpu, Globe, Database } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, EvidenceItem } from '@/lib/app-store';
+import { toast } from 'sonner';
+
+const renderStructuredPayload = (item: EvidenceItem) => {
+  if (!item.payload) {
+    return <p className="text-xs text-muted-foreground italic">No detailed payload metadata captured for this evidence.</p>;
+  }
+
+  const p = item.payload;
+
+  switch (item.type) {
+    case 'Log File':
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process Name</span>
+              <span className="text-foreground font-semibold text-sm flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-accent" />
+                {p.process || 'syslog'}
+              </span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process PID</span>
+              <span className="text-accent font-semibold text-sm">{p.pid ?? 'N/A'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Source Stream</span>
+              <span className="text-foreground text-xs truncate block">{p.source || 'system.log'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Severity Level</span>
+              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mt-0.5 ${
+                p.level === 'error' ? 'bg-red-950/40 text-red-400 border border-red-800/30' :
+                p.level === 'warn' ? 'bg-yellow-950/40 text-yellow-400 border border-yellow-800/30' :
+                'bg-blue-950/40 text-blue-400 border border-blue-800/30'
+              }`}>
+                {p.level || 'info'}
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-red-950/10 border border-red-900/20 rounded font-mono text-xs text-foreground/90 space-y-1 text-left">
+            <span className="text-[10px] text-muted-foreground uppercase block">Captured Log Entry Payload</span>
+            <p className="whitespace-pre-wrap leading-relaxed select-all">{p.message}</p>
+          </div>
+        </div>
+      );
+
+    case 'Memory Dump':
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="p-2.5 bg-card/45 rounded border border-border/20 col-span-2 md:col-span-1">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process Name</span>
+              <span className="text-foreground font-semibold text-sm truncate block">{p.name || 'unknown'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process PID</span>
+              <span className="text-accent font-semibold text-sm">{p.pid ?? 'N/A'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">User Context</span>
+              <span className="text-foreground text-sm">{p.username || 'unknown'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">CPU Load</span>
+              <span className="text-foreground text-sm flex items-center gap-1">
+                <Cpu className="w-3.5 h-3.5 text-accent" />
+                {p.cpu_percent ?? 0}%
+              </span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Memory Usage</span>
+              <span className="text-foreground text-sm">{p.memory_percent ?? 0}%</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Audit Status</span>
+              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mt-0.5 ${
+                p.suspicious ? 'bg-red-950/40 text-red-400 border border-red-800/30' : 'bg-green-950/40 text-green-400 border border-green-800/30'
+              }`}>
+                {p.suspicious ? 'SUSPICIOUS' : 'VERIFIED CLEAN'}
+              </span>
+            </div>
+          </div>
+          {p.status && (
+            <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-xs text-left">
+              <span className="text-muted-foreground block text-[10px] uppercase mb-1">Process Run State</span>
+              <span className="text-foreground">{p.status}</span>
+            </div>
+          )}
+        </div>
+      );
+
+    case 'Network Capture':
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="p-2.5 bg-card/45 rounded border border-border/20 col-span-2 md:col-span-1">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process Link</span>
+              <span className="text-foreground font-semibold text-sm truncate block">{p.process || 'N/A'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Local Socket</span>
+              <span className="text-foreground text-xs truncate block">{p.local_ip ? `${p.local_ip}:${p.local_port}` : 'N/A'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Remote Socket</span>
+              <span className="text-accent font-semibold text-xs truncate block">{p.remote_ip ? `${p.remote_ip}:${p.remote_port}` : 'N/A'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Protocol</span>
+              <span className="text-foreground text-sm">{p.protocol || 'TCP'}</span>
+            </div>
+            {p.status && (
+              <div className="p-2.5 bg-card/45 rounded border border-border/20">
+                <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">TCP Socket State</span>
+                <span className="text-foreground text-sm">{p.status}</span>
+              </div>
+            )}
+            {p.geo?.country && (
+              <div className="p-2.5 bg-card/45 rounded border border-border/20">
+                <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Geo Location</span>
+                <span className="text-foreground text-sm flex items-center gap-1">
+                  <Globe className="w-3.5 h-3.5 text-accent" />
+                  {p.geo.country}
+                </span>
+              </div>
+            )}
+          </div>
+          {p.geo?.org && (
+            <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-xs text-left">
+              <span className="text-muted-foreground block text-[10px] uppercase mb-1">Remote ISP/Owner Organization</span>
+              <span className="text-foreground">{p.geo.org}</span>
+            </div>
+          )}
+          {p.indicators && p.indicators.length > 0 && (
+            <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-xs text-left">
+              <span className="text-muted-foreground block text-[10px] uppercase mb-1">Security Flags / Threat Indicators</span>
+              <div className="flex gap-1.5 flex-wrap mt-1">
+                {p.indicators.map((ind: string, idx: number) => (
+                  <Badge key={idx} variant="outline" className="bg-red-950/20 text-red-400 border-red-900/40 text-[10px] py-0">
+                    {ind}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+
+    case 'File': // Alert
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Alert Rule Category</span>
+              <span className="text-foreground font-semibold text-sm">{p.category || 'unknown'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Escalated Severity</span>
+              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mt-0.5 ${
+                p.severity === 'critical' ? 'bg-red-900/40 text-red-400 border border-red-700/50' :
+                p.severity === 'high' ? 'bg-orange-900/40 text-orange-400 border border-orange-700/50' :
+                p.severity === 'medium' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/50' :
+                'bg-blue-900/40 text-blue-400 border border-blue-700/50'
+              }`}>
+                {p.severity || 'high'}
+              </span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Target Assets</span>
+              <span className="text-foreground text-xs truncate block">{(p.affectedAssets && p.affectedAssets.join(', ')) || 'localhost'}</span>
+            </div>
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Sensor Source</span>
+              <span className="text-foreground text-xs truncate block">{p.source || 'endpoint-agent'}</span>
+            </div>
+          </div>
+          <div className="p-3 bg-red-950/10 border border-red-900/20 rounded font-mono text-xs text-foreground/90 space-y-1 text-left">
+            <span className="text-[10px] text-muted-foreground uppercase block">Security Detection Context</span>
+            <p className="whitespace-pre-wrap leading-relaxed select-all">{p.description}</p>
+          </div>
+        </div>
+      );
+
+    default:
+      return (
+        <div className="p-3 bg-card/45 rounded border border-border/20 font-mono text-xs text-foreground select-all whitespace-pre-wrap text-left">
+          {JSON.stringify(p, null, 2)}
+        </div>
+      );
+  }
+};
 
 export default function ForensicsPage() {
-  const { evidenceItems } = useAppStore();
+  const { evidenceItems, authenticateEvidenceItem } = useAppStore();
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
   const [filter, setFilter] = useState('all');
+  const [detailsTab, setDetailsTab] = useState<'structured' | 'raw'>('structured');
+
+  const handleDownloadJSON = (item: EvidenceItem) => {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(item, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `forensys_evidence_${item.id}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      toast.success('Evidence Downloaded', { description: `Saved as forensys_evidence_${item.id}.json` });
+    } catch (e) {
+      toast.error('Download Failed', { description: 'Could not export raw json.' });
+    }
+  };
+
+  const handleExportReport = (item: EvidenceItem) => {
+    try {
+      const reportText = `FORENSYS SECURITY REPORT - EVIDENCE VAULT
+==================================================
+Evidence ID: ${item.id}
+Incident ID: ${item.incidentId}
+Evidence Type: ${item.type}
+Collection Timestamp: ${new Date(item.collectedAt).toLocaleString()}
+Collected By: ${item.collectedBy}
+Validation Status: ${item.status}
+SHA256 Integrity Hash: ${item.hash}
+
+RAW PAYLOAD DATA
+--------------------------------------------------
+${JSON.stringify(item.payload || {}, null, 2)}
+`;
+      const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(reportText);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `forensys_report_${item.id}.txt`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      toast.success('Report Exported', { description: `Saved as forensys_report_${item.id}.txt` });
+    } catch (e) {
+      toast.error('Export Failed', { description: 'Could not write text report.' });
+    }
+  };
 
   // Keep selectedEvidence in sync when evidenceItems change or first load
   useEffect(() => {
@@ -19,6 +256,10 @@ export default function ForensicsPage() {
       setSelectedEvidence(evidenceItems[0]);
     }
   }, [evidenceItems, selectedEvidence]);
+
+  useEffect(() => {
+    setDetailsTab('structured');
+  }, [selectedEvidence?.id]);
 
   const filteredItems = evidenceItems.filter((item) => {
     if (filter === 'all') return true;
@@ -174,34 +415,87 @@ export default function ForensicsPage() {
                   </div>
                 </div>
 
-                {/* Chain of Custody */}
-                <div className="border-t border-border/50 pt-4">
-                  <h3 className="font-semibold text-foreground mb-3">Chain of Custody</h3>
-                  <div className="space-y-2">
-                    {selectedEvidence.chain.map((step, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-bold font-mono">
-                          ✓
-                        </div>
-                        <span className="text-foreground text-sm font-mono">{step}</span>
-                        {idx < selectedEvidence.chain.length - 1 && (
-                          <div className="flex-1 h-0.5 bg-border/50" />
-                        )}
+                {/* Captured Forensic Payload */}
+                {selectedEvidence.payload && (
+                  <div className="border-t border-border/50 pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-foreground flex items-center gap-2">
+                        <FileCode className="w-4 h-4 text-accent" />
+                        Captured Forensic Payload
+                      </h3>
+                      <div className="flex bg-card/85 border border-border/50 rounded p-0.5 text-xs font-mono">
+                        <button
+                          onClick={() => setDetailsTab('structured')}
+                          className={`px-2 py-1 rounded transition-all ${
+                            detailsTab === 'structured'
+                              ? 'bg-accent/20 text-accent font-semibold'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          Structured
+                        </button>
+                        <button
+                          onClick={() => setDetailsTab('raw')}
+                          className={`px-2 py-1 rounded transition-all ${
+                            detailsTab === 'raw'
+                              ? 'bg-accent/20 text-accent font-semibold'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          Raw JSON
+                        </button>
                       </div>
-                    ))}
+                    </div>
+
+                    <div className="glass rounded border border-border/50 p-4 min-h-[160px] bg-card/25">
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={detailsTab}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="w-full text-left"
+                        >
+                          {detailsTab === 'structured' ? (
+                            renderStructuredPayload(selectedEvidence)
+                          ) : (
+                            <div className="relative font-mono text-xs bg-black/40 border border-border/20 rounded p-3 text-emerald-400 overflow-auto max-h-[300px] select-all">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(JSON.stringify(selectedEvidence.payload, null, 2));
+                                  toast.success('Copied Payload', { description: 'JSON copied to clipboard' });
+                                }}
+                                className="absolute right-2 top-2 p-1.5 rounded bg-card/85 hover:bg-card border border-border/30 text-muted-foreground hover:text-foreground transition-all"
+                                title="Copy JSON"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <pre className="whitespace-pre-wrap leading-relaxed">{JSON.stringify(selectedEvidence.payload, null, 2)}</pre>
+                            </div>
+                          )}
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Actions */}
                 <div className="border-t border-border/50 pt-4 flex gap-2">
-                  <Button className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground" size="sm">
-                    Verify Hash
+                  <Button
+                    onClick={() => handleDownloadJSON(selectedEvidence)}
+                    variant="outline"
+                    className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
+                    size="sm"
+                  >
+                    Download JSON
                   </Button>
-                  <Button variant="outline" className="flex-1 border-border/50" size="sm">
-                    Download
-                  </Button>
-                  <Button variant="outline" className="flex-1 border-border/50" size="sm">
-                    Export
+                  <Button
+                    onClick={() => handleExportReport(selectedEvidence)}
+                    variant="outline"
+                    className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
+                    size="sm"
+                  >
+                    Export Report
                   </Button>
                 </div>
               </motion.div>
