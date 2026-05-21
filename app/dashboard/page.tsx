@@ -302,19 +302,6 @@ export default function Dashboard() {
               <div className="py-12 text-center text-xs text-muted-foreground font-mono">[NO ESCALATED INCIDENTS]</div>
             )}
           </div>
-          {/* Quick stats */}
-          <div className="px-3 pb-3 grid grid-cols-3 gap-2">
-            {[
-              { label: 'Uptime', value: `${Math.floor(metrics.uptime_seconds / 3600)} Hours` },
-              { label: 'Host Network', value: `${(metrics.bytes_sent + metrics.bytes_recv) > 1073741824 ? `${((metrics.bytes_sent + metrics.bytes_recv)/1073741824).toFixed(1)} GB` : `${((metrics.bytes_sent + metrics.bytes_recv)/1048576).toFixed(0)} MB`}` },
-              { label: 'Threat Rules', value: 'Active' },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center p-2 bg-card/40 rounded border border-border/30">
-                <div className="text-sm font-bold text-accent font-mono truncate">{stat.value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{stat.label}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>

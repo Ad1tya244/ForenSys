@@ -200,7 +200,7 @@ export default function IncidentsPage() {
         </div>
 
         {/* Incident Detail */}
-        <div className="lg:col-span-3 glass rounded-lg border border-border/50 p-5 space-y-5 overflow-auto max-h-[700px] min-h-[300px]">
+        <div className="lg:col-span-3 glass rounded-lg border border-border/50 p-5 space-y-5 h-fit">
           {selectedIncident ? (
             <AnimatePresence mode="wait">
               <motion.div
