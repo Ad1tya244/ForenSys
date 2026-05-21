@@ -46,12 +46,45 @@ __v0_jsx-dev-runtime.ts
 .idea/
 .vscode/
 *.swp
+*.swo
 
-# Python backend
+# OS / System
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Exported Diagnostic Reports
+forensys_*.csv
+forensys_*.json
+
+# Local env files
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# Python backend / development
 backend/.venv/
 backend/venv/
+venv/
+.venv/
+env/
+.env/
 **/__pycache__/
 **/*.pyc
 **/*.pyo
 **/*.pyd
 .python-version
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+pip-log.txt
