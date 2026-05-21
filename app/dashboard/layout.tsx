@@ -40,7 +40,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: Activity },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertTriangle },
-  { href: '/dashboard/threat-intelligence', label: 'Threat Intel', icon: Shield },
+  { href: '/dashboard/threat-intelligence', label: 'Network Intel', icon: Shield },
   { href: '/dashboard/incidents', label: 'Incidents', icon: FileText },
   { href: '/dashboard/forensics', label: 'Forensics', icon: Lock },
   { href: '/dashboard/automation', label: 'Automation', icon: Zap },

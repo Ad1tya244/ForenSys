@@ -64,6 +64,7 @@ interface AppState {
   alerts: RealAlert[];
   incidents: Incident[];
   metrics: RealMetrics | null;
+  metricsHistory: (RealMetrics & { timestamp: string })[];
   connections: NetworkConnection[];
   processes: RealProcess[];
   logs: RealLogEntry[];
@@ -104,6 +105,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   incidents: [],
   metrics: null,
+  metricsHistory: [],
   connections: [],
   processes: [],
   logs: [],
@@ -180,11 +182,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         read: false,
       }));
 
+    const newMetricsPoint = snapshot.metrics ? {
+      ...snapshot.metrics,
+      timestamp: snapshot.timestamp || new Date().toISOString()
+    } : null;
+
+    const nextMetricsHistory = newMetricsPoint
+      ? [...state.metricsHistory, newMetricsPoint].slice(-30)
+      : state.metricsHistory;
+
     set({
       backendConnected: true,
       lastUpdate: snapshot.timestamp,
       alerts: mergedAlerts,
       metrics: snapshot.metrics,
+      metricsHistory: nextMetricsHistory,
       connections: snapshot.connections,
       processes: snapshot.processes,
       logs: snapshot.logs,

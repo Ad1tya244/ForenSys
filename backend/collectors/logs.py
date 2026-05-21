@@ -85,6 +85,8 @@ def _macos_logs(minutes: int) -> List[Dict]:
                     "id": unique_id,
                     "timestamp": timestamp,
                     "process": proc_name,
+                    "pid": item.get("processID", 0),
+                    "subsystem": item.get("subsystem", ""),
                     "message": msg,
                     "category": item.get("category", "system"),
                     "level": _classify_level(msg_type, msg),
@@ -98,8 +100,11 @@ def _macos_logs(minutes: int) -> List[Dict]:
 
 
 def _linux_logs() -> List[Dict]:
-    """Read last N lines of syslog/auth.log on Linux."""
+    """Read last N lines of syslog/auth.log on Linux and parse with regex."""
     candidates = ["/var/log/auth.log", "/var/log/syslog", "/var/log/messages"]
+    syslog_regex = re.compile(
+        r'^([A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2}|\S+)\s+\S+\s+([^\[:\s]+)(?:\[(\d+)\])?:\s*(.*)$'
+    )
     for path in candidates:
         try:
             result = subprocess.run(
@@ -108,17 +113,45 @@ def _linux_logs() -> List[Dict]:
                 text=True,
                 timeout=5,
             )
+            if result.returncode != 0 or not result.stdout.strip():
+                continue
             entries = []
             for i, line in enumerate(result.stdout.splitlines()):
+                if not line.strip():
+                    continue
                 line_hash = hashlib.md5(line.encode('utf-8')).hexdigest()[:8]
+                
+                # Default values
+                timestamp = ""
+                process = "syslog"
+                pid = 0
+                message = line
+                subsystem = ""
+                category = "system"
+                
+                match = syslog_regex.match(line)
+                if match:
+                    timestamp_str, proc, pid_str, msg = match.groups()
+                    timestamp = timestamp_str
+                    process = proc
+                    if pid_str:
+                        try:
+                            pid = int(pid_str)
+                        except ValueError:
+                            pass
+                    message = msg
+                    subsystem = proc
+                
                 entries.append(
                     {
                         "id": f"lnx-{i}-{line_hash}",
-                        "timestamp": "",
-                        "process": "syslog",
-                        "message": line,
-                        "category": "system",
-                        "level": _classify_level("Default", line),
+                        "timestamp": timestamp,
+                        "process": process,
+                        "pid": pid,
+                        "subsystem": subsystem,
+                        "message": message,
+                        "category": category,
+                        "level": _classify_level("Default", message),
                         "source": path,
                     }
                 )

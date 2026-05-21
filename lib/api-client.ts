@@ -21,6 +21,7 @@ export interface RealMetrics {
   connections_total: number;
   uptime_seconds: number;
   platform: string;
+  platform_version?: string;
   hostname: string;
   threat_level: 'low' | 'medium' | 'high' | 'critical';
   alerts_total: number;
@@ -62,6 +63,8 @@ export interface RealLogEntry {
   id: string;
   timestamp: string;
   process: string;
+  pid?: number;
+  subsystem?: string;
   message: string;
   category: string;
   level: 'info' | 'warn' | 'error';
