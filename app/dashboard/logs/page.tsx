@@ -331,7 +331,7 @@ export default function LogsPage() {
             <span>LOG LEVEL DENSITY</span>
             <span>INFO: {infoCount} | WARN: {warnCount} | ERROR: {errorCount}</span>
           </div>
-          <div className="h-2.5 rounded-full overflow-hidden flex bg-border/10">
+          <div className="h-1 rounded-full overflow-hidden flex bg-border/10">
             <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${(infoCount / totalCount) * 100}%` }} title={`Info: ${infoCount}`} />
             <div className="bg-yellow-500 h-full transition-all duration-300" style={{ width: `${(warnCount / totalCount) * 100}%` }} title={`Warn: ${warnCount}`} />
             <div className="bg-red-500 h-full transition-all duration-300" style={{ width: `${(errorCount / totalCount) * 100}%` }} title={`Error: ${errorCount}`} />
