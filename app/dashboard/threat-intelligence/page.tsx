@@ -829,6 +829,19 @@ export default function NetworkIntelligencePage() {
                                     <Brain className="w-3.5 h-3.5 text-cyan-400" />
                                     <span>Ask Copilot AI to Analyze</span>
                                   </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      useAppStore.getState().raiseIncidentAndCaptureForensics('network', intel);
+                                      toast.success('Incident Created', {
+                                        description: 'Network signal escalated and forensics captured.'
+                                      });
+                                    }}
+                                    className="w-full text-xs h-7.5 bg-red-950/20 text-red-400 border border-red-800/40 hover:bg-red-950/40 flex items-center justify-center gap-1.5 shadow-sm"
+                                  >
+                                    <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
+                                    <span>Raise as Incident</span>
+                                  </Button>
                                   <div className="grid grid-cols-2 gap-2">
                                     <Button
                                       variant="outline"

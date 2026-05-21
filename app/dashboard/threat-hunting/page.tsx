@@ -831,44 +831,9 @@ export default function ThreatHuntingPage() {
 
   // ── Incident Escalation Helper ──────────────────────────────────────────────
   const handleEscalateIncident = (hit: any, type: string) => {
-    const { incidents } = useAppStore.getState();
-    
-    let title = `Rogue Element Detected: ${type}`;
-    let desc = '';
-    let sev: 'critical' | 'high' | 'medium' | 'low' = 'high';
-
-    if (type === 'process') {
-      title = `Unauthorized Executable: ${hit.name} (PID: ${hit.pid})`;
-      desc = `Audit threat flagged process '${hit.name}' executing under context '${hit.username}'. CPU ${hit.cpu_percent}%. suspicious = ${hit.suspicious}`;
-      sev = hit.suspicious || hit.username === 'root' ? 'high' : 'medium';
-    } else if (type === 'connection') {
-      title = `Intrusion Socket: ${hit.process} -> ${hit.remote_ip}`;
-      desc = `Outbound network activity to external address ${hit.remote_ip}:${hit.remote_port} by owner '${hit.process}'. Geo organization: ${hit.geo?.org || 'unknown'}.`;
-      sev = !isPrivateIp(hit.remote_ip) ? 'critical' : 'medium';
-    } else if (type === 'log') {
-      title = `Security Syslog Alert: ${hit.process}`;
-      desc = `Log alert recorded during correlation: [${hit.category}] ${hit.message}`;
-      sev = hit.level === 'error' ? 'high' : 'medium';
-    }
-
-    // Append directly to the zustand incidents state list
-    const newInc = {
-      id: `INC-HUNT-${Date.now()}`,
-      title,
-      severity: sev,
-      status: 'open' as const,
-      createdAt: new Date(),
-      lastUpdated: new Date(),
-      affectedSystems: [metrics?.hostname || 'localhost'],
-      investigator: 'SOC Threat Hunt Console',
-      description: desc,
-      evidenceCount: 1,
-      relatedAlerts: []
-    };
-
-    useAppStore.setState({ incidents: [newInc, ...incidents] });
+    useAppStore.getState().raiseIncidentAndCaptureForensics(type as any, hit);
     toast.success('Escalated successfully', {
-      description: `Created new open incident ticket: ${newInc.id}`
+      description: `Created new open incident and captured forensic evidence.`
     });
   };
 

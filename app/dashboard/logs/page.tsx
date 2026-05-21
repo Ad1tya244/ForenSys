@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, LogEntry } from '@/lib/app-store';
 import { useCopilotStore } from '@/lib/copilot-store';
+import { toast } from 'sonner';
 
 const LEVEL_COLORS: Record<string, string> = {
   info: 'text-blue-400 bg-blue-950/40 border-blue-800/40',
@@ -638,6 +639,21 @@ export default function LogsPage() {
                             >
                               <Sparkles className="w-3.5 h-3.5" />
                               Analyze with Copilot
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs border-red-950/40 gap-1 bg-red-900/10 hover:bg-red-900/20 text-red-400 font-semibold transition-all"
+                              onClick={() => {
+                                useAppStore.getState().raiseIncidentAndCaptureForensics('log', log);
+                                toast.success('Raised as Incident', {
+                                  description: `Log entry from process ${log.process} has been escalated and captured in forensics.`
+                                });
+                              }}
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              Raise as Incident
                             </Button>
                           </div>
                         </div>

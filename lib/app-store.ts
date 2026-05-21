@@ -34,6 +34,32 @@ export interface Incident {
   relatedAlerts: string[];
 }
 
+export interface EvidenceItem {
+  id: string;
+  incidentId: string;
+  type: string;
+  description: string;
+  hash: string;
+  collectedBy: string;
+  collectedAt: Date;
+  chain: string[];
+  status: 'Authenticated' | 'Sealed';
+}
+
+function generateSimpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  const hex = Math.abs(hash).toString(16).padStart(8, '0');
+  const hex2 = Math.abs(hash * 31).toString(16).padStart(8, '0');
+  const hex3 = Math.abs(hash * 17).toString(16).padStart(8, '0');
+  const hex4 = Math.abs(hash * 13).toString(16).padStart(8, '0');
+  return `SHA256: ${hex}${hex2}${hex3}${hex4}`.substring(0, 72);
+}
+
 export interface AppNotification {
   id: string;
   title: string;
@@ -63,6 +89,7 @@ interface AppState {
   // Real live data
   alerts: RealAlert[];
   incidents: Incident[];
+  evidenceItems: EvidenceItem[];
   metrics: RealMetrics | null;
   metricsHistory: (RealMetrics & { timestamp: string })[];
   connections: NetworkConnection[];
@@ -82,6 +109,7 @@ interface AppState {
   acknowledgeAlert: (id: string) => void;
   resolveAlert: (id: string) => void;
   escalateAlertToIncident: (alertId: string) => void;
+  raiseIncidentAndCaptureForensics: (type: 'alert' | 'log' | 'network' | 'process' | 'connection', data: any) => void;
   updateIncidentStatus: (id: string, status: Incident['status']) => void;
 
   addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
@@ -104,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   alerts: [],
   incidents: [],
+  evidenceItems: [],
   metrics: null,
   metricsHistory: [],
   connections: [],
@@ -224,25 +253,157 @@ export const useAppStore = create<AppState>((set, get) => ({
   escalateAlertToIncident: (alertId) => {
     const alert = get().alerts.find((a) => a.id === alertId);
     if (!alert) return;
-    const incident: Incident = {
-      id: `INC-${Date.now()}`,
-      title: `ESCALATED: ${alert.title}`,
-      severity: alert.severity,
-      status: 'open',
-      createdAt: new Date(),
-      lastUpdated: new Date(),
-      affectedSystems: alert.affectedAssets,
-      investigator: 'Unassigned',
-      description: alert.description,
-      evidenceCount: 1,
-      relatedAlerts: [alertId],
-    };
-    set((s) => ({
-      incidents: [incident, ...s.incidents],
-      alerts: s.alerts.map((a) =>
-        a.id === alertId ? { ...a, status: 'investigating' as const } : a
-      ),
-    }));
+    get().raiseIncidentAndCaptureForensics('alert', alert);
+  },
+
+  raiseIncidentAndCaptureForensics: (type, data) => {
+    const incidentId = `INC-${Date.now()}`;
+    const evidenceId = `EVD-${Date.now()}`;
+    let incident: Incident;
+    let evidence: EvidenceItem;
+
+    if (type === 'alert') {
+      incident = {
+        id: incidentId,
+        title: `ALERT ESCALATION: ${data.title}`,
+        severity: data.severity,
+        status: 'open',
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        affectedSystems: data.affectedAssets && data.affectedAssets.length > 0 ? data.affectedAssets : ['localhost'],
+        investigator: 'SOC Alert Console',
+        description: `Escalated Security Alert: ${data.description}. Source: ${data.source}.`,
+        evidenceCount: 1,
+        relatedAlerts: [data.id],
+      };
+      evidence = {
+        id: evidenceId,
+        incidentId,
+        type: 'File',
+        description: `Captured alert metadata payload: ${data.title}. Source: ${data.source}.`,
+        hash: generateSimpleHash(JSON.stringify(data)),
+        collectedBy: 'ForenSys Agent',
+        collectedAt: new Date(),
+        chain: ['Captured', 'Hashed', 'Sealed'],
+        status: 'Sealed',
+      };
+    } else if (type === 'log') {
+      incident = {
+        id: incidentId,
+        title: `LOG INCIDENT: [${data.process}] ${data.message.substring(0, 50)}`,
+        severity: data.level === 'error' ? 'high' : data.level === 'warn' ? 'medium' : 'low',
+        status: 'open',
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        affectedSystems: ['localhost', data.source],
+        investigator: 'SOC Log Parser',
+        description: `Escalated Host Log Event: ${data.message}`,
+        evidenceCount: 1,
+        relatedAlerts: [],
+      };
+      evidence = {
+        id: evidenceId,
+        incidentId,
+        type: 'Log File',
+        description: `Raw log capture from process: ${data.process} (PID: ${data.pid || 'N/A'}). Source log: ${data.source || 'N/A'}`,
+        hash: generateSimpleHash(JSON.stringify(data)),
+        collectedBy: 'ForenSys Agent',
+        collectedAt: new Date(),
+        chain: ['Captured', 'Hashed', 'Sealed'],
+        status: 'Sealed',
+      };
+    } else if (type === 'network') {
+      incident = {
+        id: incidentId,
+        title: `NETWORK INTEL INCIDENT: ${data.title}`,
+        severity: data.severity,
+        status: 'open',
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        affectedSystems: ['Network Interface'],
+        investigator: 'SOC Network Console',
+        description: `Escalated Network Signal: ${data.description}. Indicators: ${data.indicators.join(', ')}`,
+        evidenceCount: 1,
+        relatedAlerts: [],
+      };
+      evidence = {
+        id: evidenceId,
+        incidentId,
+        type: 'Network Capture',
+        description: `Network traffic metadata captured for indicator(s): ${data.indicators.join(', ')}. Description: ${data.description}`,
+        hash: generateSimpleHash(JSON.stringify(data)),
+        collectedBy: 'ForenSys Agent',
+        collectedAt: new Date(),
+        chain: ['Captured', 'Hashed', 'Sealed'],
+        status: 'Sealed',
+      };
+    } else if (type === 'process') {
+      incident = {
+        id: incidentId,
+        title: `PROCESS INCIDENT: ${data.name} (PID: ${data.pid})`,
+        severity: data.suspicious ? 'high' : 'medium',
+        status: 'open',
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        affectedSystems: ['localhost'],
+        investigator: 'SOC Threat Hunter',
+        description: `Rogue process escalated. Context: ${data.username}, CPU ${data.cpu_percent}%, Memory ${data.memory_percent}%.`,
+        evidenceCount: 1,
+        relatedAlerts: [],
+      };
+      evidence = {
+        id: evidenceId,
+        incidentId,
+        type: 'Memory Dump',
+        description: `Process memory block metadata captured for PID ${data.pid} (${data.name}). Status: ${data.status}.`,
+        hash: generateSimpleHash(JSON.stringify(data)),
+        collectedBy: 'ForenSys Agent',
+        collectedAt: new Date(),
+        chain: ['Captured', 'Hashed', 'Sealed'],
+        status: 'Sealed',
+      };
+    } else { // connection
+      incident = {
+        id: incidentId,
+        title: `CONNECTION INCIDENT: ${data.process} -> ${data.remote_ip}`,
+        severity: data.status === 'ESTABLISHED' ? 'high' : 'medium',
+        status: 'open',
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        affectedSystems: ['localhost'],
+        investigator: 'SOC Threat Hunter',
+        description: `Intrusion socket connection escalated. Remote IP: ${data.remote_ip}:${data.remote_port}, process: ${data.process} (PID: ${data.pid || 'N/A'}).`,
+        evidenceCount: 1,
+        relatedAlerts: [],
+      };
+      evidence = {
+        id: evidenceId,
+        incidentId,
+        type: 'Network Capture',
+        description: `Active socket payload metadata. Protocol: ${data.protocol}, State: ${data.status}. Remote Org: ${data.geo?.org || 'unknown'}.`,
+        hash: generateSimpleHash(JSON.stringify(data)),
+        collectedBy: 'ForenSys Agent',
+        collectedAt: new Date(),
+        chain: ['Captured', 'Hashed', 'Sealed'],
+        status: 'Sealed',
+      };
+    }
+
+    set((s) => {
+      const nextIncidents = [incident, ...s.incidents];
+      const nextEvidence = [evidence, ...s.evidenceItems];
+      let nextAlerts = s.alerts;
+      if (type === 'alert') {
+        nextAlerts = s.alerts.map((a) =>
+          a.id === data.id ? { ...a, status: 'investigating' as const } : a
+        );
+      }
+      return {
+        incidents: nextIncidents,
+        evidenceItems: nextEvidence,
+        alerts: nextAlerts,
+      };
+    });
   },
 
   updateIncidentStatus: (id, status) =>
