@@ -57,9 +57,10 @@ export default function ArchitecturePage() {
     devices, 
     listeningPorts, 
     metrics, 
-    alerts, 
+    alerts: rawAlerts, 
     raiseIncidentAndCaptureForensics 
   } = useAppStore();
+  const alerts = rawAlerts.filter((a) => a.status !== 'resolved');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);

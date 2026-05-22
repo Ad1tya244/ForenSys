@@ -18,6 +18,69 @@ const SUGGESTED_QUESTIONS = [
   'Avg response time this session',
 ];
 
+function parseInlineMarkdown(text: string): React.ReactNode[] {
+  const regex = /(\*\*.*?\*\*|`.*?`)/g;
+  const parts = text.split(regex);
+  
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold text-accent">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={i} className="px-1 py-0.5 rounded bg-zinc-950/80 font-mono text-[10px] text-accent border border-zinc-800/40">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function renderMessageContent(content: string) {
+  const parts = content.split(/(```\w*\n[\s\S]*?```)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('```')) {
+      const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+      const language = match ? match[1] : '';
+      const code = match ? match[2].trim() : part.replace(/```/g, '').trim();
+      return (
+        <div key={index} className="my-2 p-2.5 rounded bg-zinc-950 font-mono text-[10px] text-zinc-200 overflow-x-auto border border-zinc-800/80">
+          {language && <div className="text-[9px] uppercase text-zinc-500 mb-1 border-b border-zinc-800/50 pb-0.5">{language}</div>}
+          <pre className="whitespace-pre">{code}</pre>
+        </div>
+      );
+    } else {
+      const lines = part.split('\n');
+      return lines.map((line, lineIndex) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={`${index}-${lineIndex}`} className="h-1.5" />;
+        }
+
+        const listMatch = line.match(/^(\s*)(•|\*|-|\d+\.)\s+(.*)/);
+        
+        if (listMatch) {
+          const indent = listMatch[1].length;
+          const textContent = listMatch[3];
+          const children = parseInlineMarkdown(textContent);
+          
+          return (
+            <div key={`${index}-${lineIndex}`} className="flex items-start gap-1.5 my-1" style={{ paddingLeft: `${indent * 8}px` }}>
+              <span className="text-accent/80 select-none font-bold mt-0.5">•</span>
+              <span className="flex-1 text-[11px] leading-relaxed">{children}</span>
+            </div>
+          );
+        }
+
+        const children = parseInlineMarkdown(line);
+        return (
+          <p key={`${index}-${lineIndex}`} className="mb-1 text-[11px] leading-relaxed">
+            {children}
+          </p>
+        );
+      });
+    }
+  });
+}
+
 export function CopilotSidebar() {
   const { isOpen, messages, isLoading, toggleSidebar, clearMessages, sendMessage } = useCopilotStore();
   const { alerts, incidents } = useAppStore();
@@ -45,7 +108,7 @@ export function CopilotSidebar() {
           animate={{ x: 0, opacity: 1 }}
           onClick={toggleSidebar}
           className="fixed right-4 bottom-6 z-40 p-3 rounded-xl bg-accent/10 border border-accent/40 hover:bg-accent/20 transition-colors group shadow-lg shadow-accent/10"
-          title="Open AI Assistant"
+          title="Open Iris"
         >
           <Bot className="w-5 h-5 text-accent group-hover:animate-pulse" />
         </motion.button>
@@ -66,7 +129,7 @@ export function CopilotSidebar() {
               <Sparkles className="w-4 h-4 text-accent" />
             </div>
             <div>
-              <h2 className="text-xs font-bold text-foreground">Security Assistant</h2>
+              <h2 className="text-xs font-bold text-foreground">Iris</h2>
               <div className="flex items-center gap-1 mt-0.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 <span className="text-xs text-muted-foreground">Context-aware · Live data</span>
@@ -100,12 +163,12 @@ export function CopilotSidebar() {
                   }`}>
                     {msg.role === 'user' ? 'U' : <Sparkles className="w-3.5 h-3.5" />}
                   </div>
-                  <div className={`flex-1 p-2.5 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${
+                  <div className={`flex-1 p-2.5 rounded-lg text-xs leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-accent/10 border border-accent/30 text-foreground'
+                      ? 'bg-accent/10 border border-accent/30 text-foreground whitespace-pre-wrap'
                       : 'bg-card border border-border/50 text-foreground'
                   }`}>
-                    {msg.content}
+                    {msg.role === 'user' ? msg.content : renderMessageContent(msg.content)}
                   </div>
                 </motion.div>
               ))}
@@ -187,3 +250,4 @@ export function CopilotSidebar() {
     </>
   );
 }
+

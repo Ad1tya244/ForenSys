@@ -638,7 +638,7 @@ export default function LogsPage() {
                               onClick={() => handleAISubmit(log)}
                             >
                               <Sparkles className="w-3.5 h-3.5" />
-                              Analyze with Copilot
+                              Analyze with Iris
                             </Button>
 
                             <Button

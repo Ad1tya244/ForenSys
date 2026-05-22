@@ -10,12 +10,12 @@ ForenSys streams real host telemetry and runs local threat analysis to drive all
 
 - **Command Center Dashboard**: Live host metrics (real CPU, RAM, Disk, Uptime), threat level gauges, real-time alert tickers, and connection metrics.
 - **Real-Time Network Telemetry**: Streams active TCP/UDP connections and local listening sockets. Uses a non-root `lsof` fallback collector on macOS to map sockets to their owner process names and PIDs.
-- **Network Intelligence Console**: Displays active network indicators of compromise, geolocated peers, and active network connections. Features interactive Recharts density/type breakdown graphs, regex-powered search filter fields, CSV/JSON report exporters, and direct SOC Copilot AI deep-dives for forensic analysis.
+- **Network Intelligence Console**: Displays active network indicators of compromise, geolocated peers, and active network connections. Features interactive Recharts density/type breakdown graphs, regex-powered search filter fields, CSV/JSON report exporters, and direct Iris AI deep-dives for forensic analysis.
 - **Local Asset Discovery**: Discovers devices on the local network in real-time via local ARP table extraction.
 - **Security Analytics**: Visualizes Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), asset risk distribution (Radar charts), and alert severity trends.
 - **Network Architecture Map**: Interactive SVG-based network topology mapping that highlights compromised nodes, local interfaces, and traffic pathways.
-- **Log Explorer**: Live streaming log explorer capturing active system log streams with level, process, subsystem, and category filters. Features a dynamic stacked level density distribution bar, regex search mode with real-time error syntax feedback, inline query term highlighting, CSV/JSON exporters, and an expanded drawer with direct Copilot analyzer hooks.
-- **Context-Aware AI Copilot**: A built-in Security Assistant analyzing live SOC state to reconstruct attack chains and answer analysis questions.
+- **Log Explorer**: Live streaming log explorer capturing active system log streams with level, process, subsystem, and category filters. Features a dynamic stacked level density distribution bar, regex search mode with real-time error syntax feedback, inline query term highlighting, CSV/JSON exporters, and an expanded drawer with direct Iris analyzer hooks.
+- **Context-Aware AI Security Assistant (Iris)**: A built-in Security Assistant analyzing live SOC state to reconstruct attack chains and answer analysis questions.
 - **SOAR Automation & RBAC**: Automated "If/Then" containment rules and role-based access control permission configurations.
 
 ---
@@ -66,6 +66,18 @@ ForenSys streams real host telemetry and runs local threat analysis to drive all
 4. **Access the SOC Console:**
    Open [http://localhost:3000](http://localhost:3000) in your browser. The dashboard will connect to the backend WebSocket automatically.
 
+### 🔑 Configuring Iris AI (Optional)
+
+Iris uses Google Gemini to generate live, context-aware threat intelligence and response recommendations.
+
+To enable the live AI model (instead of the local rules-based fallback):
+1. Create a `.env.local` file in the root of the project.
+2. Add your Gemini API key:
+   ```env
+   GEMINI_API_KEY=your_api_key_here
+   ```
+3. Restart the dev server (`npm run dev`). The server-side API handler will securely run all model requests.
+
 ---
 
 ## 📁 Project Structure
@@ -79,7 +91,7 @@ ForenSys streams real host telemetry and runs local threat analysis to drive all
 │   ├── main.py               # FastAPI server entrypoint
 │   └── requirements.txt      # Backend Python dependencies
 ├── components/               # React UI Components
-│   ├── copilot/              # AI Security Assistant panels
+│   ├── copilot/              # Iris AI Security Assistant panels
 │   └── ui/                   # Shared design system components
 ├── lib/                      # Next.js client integration
 │   ├── api-client.ts         # WebSocket / REST client setup

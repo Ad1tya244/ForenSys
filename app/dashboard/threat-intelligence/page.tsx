@@ -79,7 +79,8 @@ interface IntelItem {
 }
 
 export default function NetworkIntelligencePage() {
-  const { alerts, metrics, connections } = useAppStore();
+  const { alerts: rawAlerts, metrics, connections } = useAppStore();
+  const alerts = rawAlerts.filter((a) => a.status !== 'resolved');
   const copilotStore = useCopilotStore();
 
   const [search, setSearch] = useState('');
@@ -280,7 +281,7 @@ export default function NetworkIntelligencePage() {
   const handleAnalyzeWithCopilot = (intel: IntelItem) => {
     const query = `Analyze the network intelligence indicator "${intel.indicators.join(', ')}" associated with the incident: "${intel.title}". Severity is "${intel.severity}" and confidence score is ${intel.confidence}%. Provide the observed tactic, potential attack chain, and response options.`;
     copilotStore.sendMessage(query);
-    toast.success('Triggered Copilot Analysis', { description: 'Opening Copilot panel' });
+    toast.success('Triggered Iris Analysis', { description: 'Opening Iris panel' });
   };
 
   // CSV Data Downloader
@@ -827,7 +828,7 @@ export default function NetworkIntelligencePage() {
                                     className="w-full text-xs h-7.5 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 text-cyan-200 border border-cyan-700/50 hover:from-cyan-900/60 hover:to-blue-900/60 flex items-center justify-center gap-1.5 shadow-sm"
                                   >
                                     <Brain className="w-3.5 h-3.5 text-cyan-400" />
-                                    <span>Ask Copilot AI to Analyze</span>
+                                    <span>Ask Iris to Analyze</span>
                                   </Button>
                                   <Button
                                     size="sm"

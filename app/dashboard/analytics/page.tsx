@@ -14,21 +14,31 @@ const SEVERITY_COLORS = ['#ef4444', '#f97316', '#eab308', '#3b82f6'];
 
 const CustomTooltipStyle = {
   backgroundColor: 'rgba(15, 23, 42, 0.95)',
-  border: '1px solid rgba(0,200,255,0.3)',
+  border: '1px solid rgba(0, 200, 255, 0.3)',
   borderRadius: '8px',
   fontSize: '12px',
+  color: '#e2e8f0',
+};
+
+const CustomTooltipItemStyle = {
+  color: '#e2e8f0',
+};
+
+const CustomTooltipLabelStyle = {
   color: '#e2e8f0',
 };
 
 export default function AnalyticsPage() {
   const { alerts, incidents, metrics, metricsHistory, connections, processes } = useAppStore();
 
-  // 1. Compute Severity distribution from actual alerts
+  const activeAlerts = alerts.filter((a) => a.status !== 'resolved');
+
+  // 1. Compute Severity distribution from active alerts
   const severityData = [
-    { name: 'Critical', value: alerts.filter((a) => a.severity === 'critical').length },
-    { name: 'High', value: alerts.filter((a) => a.severity === 'high').length },
-    { name: 'Medium', value: alerts.filter((a) => a.severity === 'medium').length },
-    { name: 'Low', value: alerts.filter((a) => a.severity === 'low').length },
+    { name: 'Critical', value: activeAlerts.filter((a) => a.severity === 'critical').length },
+    { name: 'High', value: activeAlerts.filter((a) => a.severity === 'high').length },
+    { name: 'Medium', value: activeAlerts.filter((a) => a.severity === 'medium').length },
+    { name: 'Low', value: activeAlerts.filter((a) => a.severity === 'low').length },
   ];
 
   // 2. Compute dynamic KPIs
@@ -136,7 +146,7 @@ export default function AnalyticsPage() {
   ];
 
   // 6. Compute top assets dynamically from alert frequency & suspicious processes
-  const assetCounts = alerts.reduce((acc, alert) => {
+  const assetCounts = activeAlerts.reduce((acc, alert) => {
     alert.affectedAssets.forEach((asset) => {
       acc[asset] = (acc[asset] || 0) + 1;
     });
@@ -249,7 +259,7 @@ export default function AnalyticsPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="time" stroke="#555" style={{ fontSize: '11px' }} />
               <YAxis stroke="#555" style={{ fontSize: '11px' }} />
-              <Tooltip contentStyle={CustomTooltipStyle} />
+              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
               <Legend wrapperStyle={{ fontSize: '11px' }} />
               <Line type="monotone" dataKey="incidents" stroke="#f97316" dot={false} strokeWidth={2} name="Incidents" />
               <Line type="monotone" dataKey="detected" stroke="#00c8ff" dot={false} strokeWidth={2} name="Signals / Detections" />
@@ -261,7 +271,7 @@ export default function AnalyticsPage() {
         {/* Severity Distribution */}
         <div className="glass rounded-lg p-4 border border-border/50">
           <h3 className="text-sm font-semibold text-foreground mb-4">Alert Severity Distribution (Actual Alerts)</h3>
-          {alerts.length === 0 ? (
+          {activeAlerts.length === 0 ? (
             <div className="h-[220px] flex flex-col items-center justify-center space-y-2 text-muted-foreground text-sm">
               <Shield className="w-8 h-8 text-green-400 opacity-60" />
               <span>No alerts recorded. System is secure.</span>
@@ -283,7 +293,7 @@ export default function AnalyticsPage() {
                       <Cell key={`cell-${index}`} fill={SEVERITY_COLORS[index % SEVERITY_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={CustomTooltipStyle} />
+                  <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex-1 space-y-2">
@@ -310,7 +320,7 @@ export default function AnalyticsPage() {
               <XAxis dataKey="interval" stroke="#555" style={{ fontSize: '11px' }} />
               <YAxis yAxisId="left" stroke="#555" style={{ fontSize: '11px' }} />
               <YAxis yAxisId="right" orientation="right" stroke="#555" style={{ fontSize: '11px' }} />
-              <Tooltip contentStyle={CustomTooltipStyle} />
+              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
               <Legend wrapperStyle={{ fontSize: '11px' }} />
               <Bar yAxisId="left" dataKey="mttd" name="MTTD (min)" fill="#00c8ff" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
               <Bar yAxisId="right" dataKey="mttr" name="MTTR (min)" fill="#f97316" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
@@ -327,7 +337,7 @@ export default function AnalyticsPage() {
               <PolarAngleAxis dataKey="subject" tick={{ fill: '#888', fontSize: 11 }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#666', fontSize: 10 }} />
               <Radar name="Maturity Score" dataKey="value" stroke="#00c8ff" fill="#00c8ff" fillOpacity={0.15} />
-              <Tooltip contentStyle={CustomTooltipStyle} />
+              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
             </RadarChart>
           </ResponsiveContainer>
         </div>
@@ -355,7 +365,7 @@ export default function AnalyticsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="time" stroke="#555" style={{ fontSize: '10px' }} />
                 <YAxis domain={[0, 100]} stroke="#555" style={{ fontSize: '10px' }} />
-                <Tooltip contentStyle={CustomTooltipStyle} />
+                <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
                 <Line type="monotone" dataKey="cpu" stroke="#00c8ff" dot={false} strokeWidth={2} name="CPU %" activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="memory" stroke="#eab308" dot={false} strokeWidth={2} name="Memory %" activeDot={{ r: 4 }} />
@@ -387,7 +397,7 @@ export default function AnalyticsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="time" stroke="#555" style={{ fontSize: '10px' }} />
                 <YAxis stroke="#555" style={{ fontSize: '10px' }} name="KB/s" />
-                <Tooltip contentStyle={CustomTooltipStyle} />
+                <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
                 <Line type="monotone" dataKey="recv" stroke="#22c55e" dot={false} strokeWidth={2} name="Download (KB/s)" activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="sent" stroke="#ef4444" dot={false} strokeWidth={2} name="Upload (KB/s)" activeDot={{ r: 4 }} />

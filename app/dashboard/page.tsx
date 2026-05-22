@@ -117,7 +117,8 @@ export default function Dashboard() {
     { source: 'Log Monitor', count: 0 },
   ];
 
-  const recentAlerts = alerts.slice(0, 10);
+  const activeAlerts = alerts.filter((a) => a.status !== 'resolved');
+  const recentAlerts = activeAlerts.slice(0, 10);
   const openIncidents = incidents.filter((i) => i.status === 'open' || i.status === 'investigating').slice(0, 3);
 
   const kpis = [

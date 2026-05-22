@@ -414,11 +414,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateIncidentStatus: (id, status) =>
-    set((s) => ({
-      incidents: s.incidents.map((inc) =>
-        inc.id === id ? { ...inc, status, lastUpdated: new Date() } : inc
-      ),
-    })),
+    set((s) => {
+      const incident = s.incidents.find((inc) => inc.id === id);
+      const relatedAlertIds = incident?.relatedAlerts || [];
+      return {
+        incidents: s.incidents.map((inc) =>
+          inc.id === id ? { ...inc, status, lastUpdated: new Date() } : inc
+        ),
+        alerts: s.alerts.map((a) => {
+          if (relatedAlertIds.includes(a.id)) {
+            return {
+              ...a,
+              status: status === 'resolved' ? ('resolved' as const) : ('investigating' as const),
+            };
+          }
+          return a;
+        }),
+      };
+    }),
 
   authenticateEvidenceItem: (id) =>
     set((s) => ({
