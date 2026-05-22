@@ -1,0 +1,122 @@
+[
+  {
+    "id": "1",
+    "name": "Sarah Johnson",
+    "email": "sarah.j@company.com",
+    "role": "admin",
+    "department": "Security",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "manage_alerts",
+      "view_incidents",
+      "manage_incidents",
+      "view_forensics",
+      "export_forensics",
+      "view_analytics",
+      "run_hunt",
+      "manage_playbooks",
+      "view_logs",
+      "manage_settings",
+      "manage_users"
+    ]
+  },
+  {
+    "id": "2",
+    "name": "Michael Chen",
+    "email": "m.chen@company.com",
+    "role": "analyst",
+    "department": "SOC",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "manage_alerts",
+      "view_incidents",
+      "manage_incidents",
+      "view_forensics",
+      "view_analytics",
+      "run_hunt",
+      "view_logs"
+    ]
+  },
+  {
+    "id": "3",
+    "name": "Emily Brown",
+    "email": "emily.brown@company.com",
+    "role": "analyst",
+    "department": "Threat Intel",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "manage_alerts",
+      "view_incidents",
+      "manage_incidents",
+      "view_forensics",
+      "view_analytics",
+      "run_hunt",
+      "view_logs"
+    ]
+  },
+  {
+    "id": "4",
+    "name": "David Rodriguez",
+    "email": "d.rodriguez@company.com",
+    "role": "responder",
+    "department": "IR Team",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "manage_alerts",
+      "view_incidents",
+      "manage_incidents",
+      "manage_playbooks",
+      "view_logs"
+    ]
+  },
+  {
+    "id": "5",
+    "name": "Lisa Anderson",
+    "email": "l.anderson@company.com",
+    "role": "viewer",
+    "department": "Compliance",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "view_incidents",
+      "view_analytics",
+      "view_logs"
+    ]
+  },
+  {
+    "id": "6",
+    "name": "James Wilson",
+    "email": "j.wilson@company.com",
+    "role": "viewer",
+    "department": "Management",
+    "status": "inactive",
+    "permissions": [
+      "view_alerts",
+      "view_incidents",
+      "view_analytics",
+      "view_logs"
+    ]
+  },
+  {
+    "id": "7",
+    "name": "SOC Analyst",
+    "email": "analyst@forensys.io",
+    "role": "analyst",
+    "department": "Security Ops",
+    "status": "active",
+    "permissions": [
+      "view_alerts",
+      "manage_alerts",
+      "view_incidents",
+      "manage_incidents",
+      "view_forensics",
+      "view_analytics",
+      "run_hunt",
+      "view_logs"
+    ]
+  }
+]

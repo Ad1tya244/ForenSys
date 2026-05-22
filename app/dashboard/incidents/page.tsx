@@ -8,9 +8,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FileText, Clock, User, Server, ShieldAlert, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { AccessDenied } from '@/components/rbac/access-denied';
 
 export default function IncidentsPage() {
-  const { incidents, updateIncidentStatus } = useAppStore();
+  const { incidents, updateIncidentStatus, hasPermission } = useAppStore();
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [filter, setFilter] = useState('all');
   const [mounted, setMounted] = useState(false);
@@ -27,6 +28,10 @@ export default function IncidentsPage() {
   }, [incidents, selectedIncident]);
 
   if (!mounted) return null;
+
+  if (!hasPermission('view_incidents')) {
+    return <AccessDenied permission="view_incidents" />;
+  }
 
   const filteredIncidents = incidents.filter((inc) => {
     if (filter === 'all') return true;
@@ -286,7 +291,7 @@ export default function IncidentsPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleStatusChange(selectedIncident.id, status)}
-                        disabled={selectedIncident.status === status}
+                        disabled={selectedIncident.status === status || !hasPermission('manage_incidents')}
                         className={`text-xs border-border/50 ${
                           selectedIncident.status === status ? 'opacity-50' : 'hover:border-accent/50'
                         }`}

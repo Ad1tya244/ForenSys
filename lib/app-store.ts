@@ -17,10 +17,19 @@ import {
   AppSettings,
   fetchSettings,
   saveSettings,
+  RbacUser,
+  fetchUsers,
+  saveUser,
+  deleteUser,
+  DEFAULT_PERMISSIONS,
+  checkSetupRequired,
+  bootstrapAdmin as apiBootstrapAdmin,
+  login as apiLogin,
+  updateProfile as apiUpdateProfile,
 } from './api-client';
 
 // ── Re-export types so pages don't need to change their imports ──────────────
-export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics };
+export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics, RbacUser };
 
 // Kept for compatibility with escalation flow
 export interface Incident {
@@ -98,6 +107,10 @@ interface AppState {
   notifications: AppNotification[];
   settings: AppSettings;
 
+  // Authentication State
+  currentUser: RbacUser | null;
+  setupRequired: boolean;
+
   // Actions
   connectBackend: () => void;
   disconnectBackend: () => void;
@@ -113,6 +126,20 @@ interface AppState {
   markAllRead: () => void;
   unreadCount: () => number;
   updateSettings: (patch: Partial<AppSettings>) => void;
+
+  // Authentication Actions
+  checkSetupStatus: () => Promise<void>;
+  bootstrapAdmin: (name: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  updateUserProfile: (name: string) => Promise<void>;
+
+  // RBAC state & actions
+  users: RbacUser[];
+  hasPermission: (permission: string) => boolean;
+  fetchUsers: () => Promise<void>;
+  saveUser: (user: RbacUser | Omit<RbacUser, 'id'>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
 
   // Internal
   _applySnapshot: (snapshot: BackendSnapshot) => void;
@@ -130,6 +157,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   incidents: [],
   evidenceItems: [],
+  users: [],
   metrics: null,
   metricsHistory: [],
   connections: [],
@@ -139,6 +167,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   listeningPorts: [],
   notifications: [],
 
+  currentUser: null,
+  setupRequired: false,
+
   settings: {
     notifyOnCritical: true,
     notifyOnHigh: true,
@@ -147,9 +178,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     highThreshold: 70,
     mediumThreshold: 40,
     profile: {
-      name: 'SOC Analyst',
-      email: 'analyst@forensys.io',
-      role: 'Senior Analyst',
+      name: '',
+      email: '',
+      role: '',
     },
     integrations: [
       { name: 'Emerging Threats Blocklist', connected: true },
@@ -162,12 +193,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ── Backend connection ──────────────────────────────────────────────────────
   connectBackend: () => {
+    // Load currentUser from localStorage if present
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('forensys_user');
+      if (stored && !get().currentUser) {
+        try {
+          const user = JSON.parse(stored);
+          set({ currentUser: user });
+        } catch (e) {
+          localStorage.removeItem('forensys_user');
+        }
+      }
+    }
+
     if (_socket) return; // already connected
 
     // First check if backend is reachable
     checkBackendAlive().then((alive) => {
       set({ backendChecked: true, backendConnected: alive });
       if (alive) {
+        get().checkSetupStatus();
+
         fetchSettings()
           .then((backendSettings) => {
             if (backendSettings) {
@@ -175,6 +221,14 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           })
           .catch((err) => console.error('Error fetching settings:', err));
+
+        fetchUsers()
+          .then((users) => {
+            if (users) {
+              set({ users });
+            }
+          })
+          .catch((err) => console.error('Error fetching users:', err));
       }
     });
 
@@ -230,6 +284,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextMetricsHistory = newMetricsPoint
       ? [...state.metricsHistory, newMetricsPoint].slice(-30)
       : state.metricsHistory;
+
+    // Detect connection transition from offline to online
+    if (!state.backendConnected) {
+      get().checkSetupStatus();
+      fetchSettings()
+        .then((backendSettings) => {
+          if (backendSettings) {
+            set({ settings: backendSettings });
+          }
+        })
+        .catch((err) => console.warn('Deferred settings fetch failed:', err));
+      get().fetchUsers();
+    }
 
     set({
       backendConnected: true,
@@ -472,12 +539,117 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   unreadCount: () => get().notifications.filter((n) => !n.read).length,
 
+  hasPermission: (permission) => {
+    const { currentUser } = get();
+    if (!currentUser) return false;
+    if (currentUser.status !== 'active') return false;
+    return currentUser.permissions.includes(permission);
+  },
+
+  checkSetupStatus: async () => {
+    try {
+      const status = await checkSetupRequired();
+      set({ setupRequired: status.setup_required });
+    } catch (err) {
+      console.error('Error checking setup status:', err);
+    }
+  },
+
+  bootstrapAdmin: async (name, email, password) => {
+    try {
+      const user = await apiBootstrapAdmin(name, email, password);
+      set({ currentUser: user, setupRequired: false });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('forensys_user', JSON.stringify(user));
+      }
+      await get().fetchUsers();
+    } catch (err) {
+      console.error('Error bootstrapping admin:', err);
+      throw err;
+    }
+  },
+
+  login: async (email, password) => {
+    try {
+      const user = await apiLogin(email, password);
+      set({ currentUser: user });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('forensys_user', JSON.stringify(user));
+      }
+    } catch (err) {
+      console.error('Error logging in:', err);
+      throw err;
+    }
+  },
+
+  logout: () => {
+    set({ currentUser: null });
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('forensys_user');
+    }
+  },
+
+  updateUserProfile: async (name) => {
+    const { currentUser } = get();
+    if (!currentUser) return;
+    try {
+      const updated = await apiUpdateProfile(name, currentUser.email);
+      set({ currentUser: updated });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('forensys_user', JSON.stringify(updated));
+      }
+    } catch (err) {
+      console.error('Error updating user profile:', err);
+      throw err;
+    }
+  },
+
+  fetchUsers: async () => {
+    try {
+      const users = await fetchUsers();
+      set({ users });
+    } catch (err) {
+      console.error('Error fetching users:', err);
+    }
+  },
+
+  saveUser: async (user) => {
+    try {
+      const saved = await saveUser(user);
+      const { currentUser } = get();
+      if (currentUser && saved.email === currentUser.email) {
+        set({ currentUser: saved });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('forensys_user', JSON.stringify(saved));
+        }
+      }
+      await get().fetchUsers();
+    } catch (err) {
+      console.error('Error saving user:', err);
+      throw err;
+    }
+  },
+
+  deleteUser: async (id) => {
+    try {
+      await deleteUser(id);
+      await get().fetchUsers();
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      throw err;
+    }
+  },
+
   // ── Settings ────────────────────────────────────────────────────────────────
   updateSettings: (patch) => {
     const updated = { ...get().settings, ...patch };
     set({ settings: updated });
-    saveSettings(updated).catch((err) => {
-      console.error('Error saving settings:', err);
-    });
+    saveSettings(updated)
+      .then(() => {
+        get().fetchUsers();
+      })
+      .catch((err) => {
+        console.error('Error saving settings:', err);
+      });
   },
 }));

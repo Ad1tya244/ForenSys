@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, LogEntry } from '@/lib/app-store';
 import { useCopilotStore } from '@/lib/copilot-store';
 import { toast } from 'sonner';
+import { AccessDenied } from '@/components/rbac/access-denied';
 
 const LEVEL_COLORS: Record<string, string> = {
   info: 'text-blue-400 bg-blue-950/40 border-blue-800/40',
@@ -67,6 +68,7 @@ function HighlightedText({ text, search, isRegex }: { text: string; search: stri
 
 export default function LogsPage() {
   const storeLogs = useAppStore((state) => state.logs);
+  const hasPermission = useAppStore((state) => state.hasPermission);
   const [displayLogs, setDisplayLogs] = useState<LogEntry[]>([]);
   const [search, setSearch] = useState('');
   const [isRegex, setIsRegex] = useState(false);
@@ -108,6 +110,10 @@ export default function LogsPage() {
   }, [search, isRegex]);
 
   if (!mounted) return null;
+
+  if (!hasPermission('view_logs')) {
+    return <AccessDenied permission="view_logs" />;
+  }
 
   // Extract unique filtering dimensions
   const processes = Array.from(new Set(displayLogs.map((l) => l.process))).sort();
@@ -651,6 +657,7 @@ export default function LogsPage() {
                                   description: `Log entry from process ${log.process} has been escalated and captured in forensics.`
                                 });
                               }}
+                              disabled={!hasPermission('manage_incidents')}
                             >
                               <AlertTriangle className="w-3.5 h-3.5" />
                               Raise as Incident

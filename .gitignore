@@ -1,34 +1,64 @@
-# Dependencies
-/node_modules
-/.pnp
+# ─── Node / Next.js ─────────────────────────────────────────────────────────
+node_modules/
+.pnp
 .pnp.js
 
-# Next.js build and production outputs
-/.next/
-/out/
-/build
+# Next.js build & export outputs
+.next/
+out/
+build/
 
-# Python virtual environments & build artifacts
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# pnpm
+.pnpm-store/
+.pnpm-debug.log
+
+# ─── Python / FastAPI backend ────────────────────────────────────────────────
 backend/.venv/
 backend/venv/
 venv/
 .venv/
 env/
 .env/
+
+# Byte-compiled / optimised / DLL files
 **/__pycache__/
-**/*.pyc
-**/*.pyo
-**/*.pyd
-.python-version
+**/*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+*.whl
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python test artefacts
 .pytest_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
-dist/
-*.egg-info/
-pip-log.txt
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
 
-# Local environment configuration files
+# Python typing stubs (auto-generated)
+.python-version
+
+# ─── Environment & Secrets ───────────────────────────────────────────────────
+# Never commit credentials, API keys, or DB passwords
 .env
 .env.local
 .env.development
@@ -38,36 +68,75 @@ pip-log.txt
 .env.production
 .env.production.local
 .env*.local
+backend/.env
 
-# OS / System temporary files
+# ─── Database ────────────────────────────────────────────────────────────────
+# SQLite (if used locally for testing)
+*.sqlite
+*.sqlite3
+*.db
+
+# MySQL dumps / exports
+*.sql
+*.dump
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── OS / System files ───────────────────────────────────────────────────────
 .DS_Store
-Thumbs.db
+.DS_Store?
+._*
 .Spotlight-V100
 .Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ─── Editor & IDE ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 *.swp
 *.swo
 
-# IDE / Editor configuration
-.idea/
-.vscode/
-
-# Testing
+# ─── Testing & Coverage ──────────────────────────────────────────────────────
 /coverage
+/test-results
+/playwright-report
+/playwright/.cache
 
-# Diagnostic reports exported by users
+# ─── ForenSys — user-exported reports ────────────────────────────────────────
+# These are generated at runtime and should not be committed
 forensys_*.csv
 forensys_*.json
+forensys_report_*.txt
+forensys_evidence_*.json
 
-# Vercel deployment files
+# ─── Deployment ──────────────────────────────────────────────────────────────
 .vercel
 
-# TypeScript build info
-*.tsbuildinfo
-next-env.d.ts
-
-# v0 sandbox / internal logs
+# ─── v0 / internal sandbox artefacts ─────────────────────────────────────────
 __v0_runtime_loader.js
 __v0_devtools.tsx
 __v0_jsx-dev-runtime.ts
 .snowflake/
 .v0-trash/
+.v0/
+
+# ─── Misc ────────────────────────────────────────────────────────────────────
+.turbo/
+.cache/
+tmp/
+temp/

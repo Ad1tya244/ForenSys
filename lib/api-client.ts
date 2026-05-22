@@ -198,6 +198,110 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
 }
 
 
+// ── RBAC REST helpers ─────────────────────────────────────────────────────────
+
+export interface RbacUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'analyst' | 'viewer' | 'responder';
+  department: string;
+  status: 'active' | 'inactive';
+  permissions: string[];
+  password?: string;
+}
+
+export const ALL_PERMISSIONS = [
+  'view_alerts',
+  'manage_alerts',
+  'view_incidents',
+  'manage_incidents',
+  'view_forensics',
+  'export_forensics',
+  'view_analytics',
+  'run_hunt',
+  'manage_playbooks',
+  'view_logs',
+  'manage_settings',
+  'manage_users',
+];
+
+export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  admin: ALL_PERMISSIONS,
+  analyst: ['view_alerts', 'manage_alerts', 'view_incidents', 'manage_incidents', 'view_forensics', 'view_analytics', 'run_hunt', 'view_logs'],
+  responder: ['view_alerts', 'manage_alerts', 'view_incidents', 'manage_incidents', 'manage_playbooks', 'view_logs'],
+  viewer: ['view_alerts', 'view_incidents', 'view_analytics', 'view_logs'],
+};
+
+export async function fetchUsers(): Promise<RbacUser[]> {
+  const res = await fetch(`${BACKEND_URL}/api/users`);
+  return res.json();
+}
+
+export async function saveUser(user: RbacUser | Omit<RbacUser, 'id'>): Promise<RbacUser> {
+  const res = await fetch(`${BACKEND_URL}/api/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(user),
+  });
+  return res.json();
+}
+
+export async function deleteUser(id: string): Promise<{ status: string }> {
+  const res = await fetch(`${BACKEND_URL}/api/users/${id}`, {
+    method: 'DELETE',
+  });
+  return res.json();
+}
+
+// ── Auth REST helpers ─────────────────────────────────────────────────────────
+
+export async function checkSetupRequired(): Promise<{ setup_required: boolean }> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/setup-status`);
+  return res.json();
+}
+
+export async function bootstrapAdmin(name: string, email: string, password: string): Promise<RbacUser> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to bootstrap administrator');
+  }
+  return res.json();
+}
+
+export async function login(email: string, password: string): Promise<RbacUser> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Invalid credentials');
+  }
+  return res.json();
+}
+
+export async function updateProfile(name: string, email: string): Promise<RbacUser> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/update-profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to update profile');
+  }
+  return res.json();
+}
+
+
+
 // ── WebSocket manager ─────────────────────────────────────────────────────────
 
 type SnapshotHandler = (snapshot: BackendSnapshot) => void;

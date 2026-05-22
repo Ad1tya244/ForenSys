@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Users, Plus, Search, Shield, Edit2, Trash2, Check, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, Plus, Search, Shield, Trash2, Check, X, Eye, EyeOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,31 +14,9 @@ import {
 } from '@/components/ui/dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-
-interface RbacUser {
-  id: string;
-  name: string;
-  email: string;
-  role: 'admin' | 'analyst' | 'viewer' | 'responder';
-  department: string;
-  status: 'active' | 'inactive';
-  permissions: string[];
-}
-
-const ALL_PERMISSIONS = [
-  'view_alerts',
-  'manage_alerts',
-  'view_incidents',
-  'manage_incidents',
-  'view_forensics',
-  'export_forensics',
-  'view_analytics',
-  'run_hunt',
-  'manage_playbooks',
-  'view_logs',
-  'manage_settings',
-  'manage_users',
-];
+import { useAppStore } from '@/lib/app-store';
+import { AccessDenied } from '@/components/rbac/access-denied';
+import { RbacUser, ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '@/lib/api-client';
 
 const ROLE_COLORS: Record<string, string> = {
   admin: 'bg-red-900/30 text-red-300 border-red-700/50',
@@ -47,28 +25,28 @@ const ROLE_COLORS: Record<string, string> = {
   viewer: 'bg-gray-900/30 text-gray-300 border-gray-700/50',
 };
 
-const DEFAULT_PERMISSIONS: Record<string, string[]> = {
-  admin: ALL_PERMISSIONS,
-  analyst: ['view_alerts', 'manage_alerts', 'view_incidents', 'manage_incidents', 'view_forensics', 'view_analytics', 'run_hunt', 'view_logs'],
-  responder: ['view_alerts', 'manage_alerts', 'view_incidents', 'manage_incidents', 'manage_playbooks', 'view_logs'],
-  viewer: ['view_alerts', 'view_incidents', 'view_analytics', 'view_logs'],
-};
-
-const INITIAL_USERS: RbacUser[] = [
-  { id: '1', name: 'Sarah Johnson', email: 'sarah.j@company.com', role: 'admin', department: 'Security', status: 'active', permissions: DEFAULT_PERMISSIONS.admin },
-  { id: '2', name: 'Michael Chen', email: 'm.chen@company.com', role: 'analyst', department: 'SOC', status: 'active', permissions: DEFAULT_PERMISSIONS.analyst },
-  { id: '3', name: 'Emily Brown', email: 'emily.brown@company.com', role: 'analyst', department: 'Threat Intel', status: 'active', permissions: DEFAULT_PERMISSIONS.analyst },
-  { id: '4', name: 'David Rodriguez', email: 'd.rodriguez@company.com', role: 'responder', department: 'IR Team', status: 'active', permissions: DEFAULT_PERMISSIONS.responder },
-  { id: '5', name: 'Lisa Anderson', email: 'l.anderson@company.com', role: 'viewer', department: 'Compliance', status: 'active', permissions: DEFAULT_PERMISSIONS.viewer },
-  { id: '6', name: 'James Wilson', email: 'j.wilson@company.com', role: 'viewer', department: 'Management', status: 'inactive', permissions: DEFAULT_PERMISSIONS.viewer },
-];
-
 export default function RBACPage() {
-  const [users, setUsers] = useState<RbacUser[]>(INITIAL_USERS);
+  const { users, fetchUsers, saveUser, deleteUser, hasPermission, backendConnected } = useAppStore();
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<RbacUser | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'viewer' as RbacUser['role'], department: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'viewer' as RbacUser['role'], department: '', password: '' });
+  const [newPassword, setNewPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  useEffect(() => {
+    if (backendConnected) {
+      fetchUsers();
+    }
+  }, [fetchUsers, backendConnected]);
+
+  // View enforcement check
+  const isAuthorized = hasPermission('manage_users');
+  if (!isAuthorized) {
+    return <AccessDenied permission="manage_users" />;
+  }
 
   const filtered = users.filter(
     (u) =>
@@ -77,61 +55,81 @@ export default function RBACPage() {
       u.department.toLowerCase().includes(search.toLowerCase())
   );
 
-  const togglePermission = (userId: string, perm: string) => {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== userId) return u;
-        const perms = u.permissions.includes(perm)
-          ? u.permissions.filter((p) => p !== perm)
-          : [...u.permissions, perm];
-        return { ...u, permissions: perms };
-      })
-    );
-    if (selectedUser?.id === userId) {
-      setSelectedUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              permissions: prev.permissions.includes(perm)
-                ? prev.permissions.filter((p) => p !== perm)
-                : [...prev.permissions, perm],
-            }
-          : null
-      );
+  const togglePermission = async (userId: string, perm: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
+
+    try {
+      const perms = user.permissions.includes(perm)
+        ? user.permissions.filter((p) => p !== perm)
+        : [...user.permissions, perm];
+      const updatedUser = { ...user, permissions: perms };
+      
+      await saveUser(updatedUser);
+      
+      if (selectedUser?.id === userId) {
+        setSelectedUser(updatedUser);
+      }
+      toast.success(`Permission updated`);
+    } catch (err) {
+      toast.error('Failed to update permission');
     }
-    toast.success(`Permission updated`);
   };
 
-  const toggleUserStatus = (userId: string) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' } : u
-      )
-    );
-    toast.info('User status updated');
+  const toggleUserStatus = async (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
+
+    try {
+      const updatedUser = { 
+        ...user, 
+        status: (user.status === 'active' ? 'inactive' : 'active') as RbacUser['status'] 
+      };
+      
+      await saveUser(updatedUser);
+      
+      if (selectedUser?.id === userId) {
+        setSelectedUser(updatedUser);
+      }
+      toast.info('User status updated');
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
-  const addUser = () => {
-    if (!newUser.name || !newUser.email) {
-      toast.error('Please fill in all required fields');
+  const addUser = async () => {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      toast.error('Please fill in all required fields (including password)');
       return;
     }
-    const user: RbacUser = {
-      id: Date.now().toString(),
-      ...newUser,
-      status: 'active',
-      permissions: DEFAULT_PERMISSIONS[newUser.role],
-    };
-    setUsers((prev) => [user, ...prev]);
-    setShowAddModal(false);
-    setNewUser({ name: '', email: '', role: 'viewer', department: '' });
-    toast.success('User added successfully');
+    
+    setLoading(true);
+    try {
+      const user: Omit<RbacUser, 'id'> = {
+        ...newUser,
+        status: 'active',
+        permissions: DEFAULT_PERMISSIONS[newUser.role] || [],
+      };
+      
+      await saveUser(user);
+      setShowAddModal(false);
+      setNewUser({ name: '', email: '', role: 'viewer', department: '', password: '' });
+      toast.success('User added successfully');
+    } catch (err) {
+      toast.error('Failed to add user');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeUser = (userId: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
-    if (selectedUser?.id === userId) setSelectedUser(null);
-    toast.success('User removed');
+  const removeUser = async (userId: string) => {
+    try {
+      await deleteUser(userId);
+      if (selectedUser?.id === userId) setSelectedUser(null);
+      toast.success('User removed');
+    } catch (err) {
+      toast.error('Failed to remove user');
+    }
   };
 
   const roleCounts = {
@@ -287,10 +285,19 @@ export default function RBACPage() {
                     {(['admin', 'analyst', 'responder', 'viewer'] as RbacUser['role'][]).map((role) => (
                       <button
                         key={role}
-                        onClick={() => {
-                          setUsers((prev) => prev.map((u) => u.id === selectedUser.id ? { ...u, role, permissions: DEFAULT_PERMISSIONS[role] } : u));
-                          setSelectedUser({ ...selectedUser, role, permissions: DEFAULT_PERMISSIONS[role] });
-                          toast.success(`Role updated to ${role}`);
+                        onClick={async () => {
+                          try {
+                            const updated = { 
+                              ...selectedUser, 
+                              role, 
+                              permissions: DEFAULT_PERMISSIONS[role] || [] 
+                            };
+                            await saveUser(updated);
+                            setSelectedUser(updated);
+                            toast.success(`Role updated to ${role}`);
+                          } catch (err) {
+                            toast.error('Failed to update role');
+                          }
                         }}
                         className={`px-3 py-1 rounded border text-xs capitalize transition-all ${
                           selectedUser.role === role ? ROLE_COLORS[role] : 'border-border/50 text-muted-foreground hover:text-foreground'
@@ -299,6 +306,57 @@ export default function RBACPage() {
                         {role}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Reset Password */}
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Reset Password</h3>
+                  <div className="flex gap-2 max-w-sm">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showResetPassword ? 'text' : 'password'}
+                        placeholder="Enter new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="bg-input border-border/50 text-xs h-9 pr-9"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowResetPassword(!showResetPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showResetPassword ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (!newPassword) {
+                          toast.error('Please enter a new password');
+                          return;
+                        }
+                        try {
+                          const updated = { 
+                            ...selectedUser, 
+                            password: newPassword 
+                          };
+                          await saveUser(updated);
+                          setNewPassword('');
+                          toast.success('Password updated successfully');
+                        } catch (err) {
+                          toast.error('Failed to update password');
+                        }
+                      }}
+                      className="bg-accent hover:bg-accent/90 text-accent-foreground text-xs h-9 shrink-0"
+                    >
+                      Update
+                    </Button>
                   </div>
                 </div>
 
@@ -358,6 +416,30 @@ export default function RBACPage() {
               </div>
             ))}
             <div>
+              <label className="text-xs text-muted-foreground block mb-1">Password *</label>
+              <div className="relative">
+                <Input
+                  type={showCreatePassword ? 'text' : 'password'}
+                  value={newUser.password}
+                  onChange={(e) => setNewUser((n) => ({ ...n, password: e.target.value }))}
+                  placeholder="••••••••"
+                  className="bg-input border-border/50 text-sm pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(!showCreatePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showCreatePassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div>
               <label className="text-xs text-muted-foreground block mb-1">Role</label>
               <select
                 value={newUser.role}
@@ -369,8 +451,12 @@ export default function RBACPage() {
                 ))}
               </select>
             </div>
-            <Button onClick={addUser} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground mt-2">
-              Add User
+            <Button 
+              onClick={addUser} 
+              disabled={loading}
+              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground mt-2"
+            >
+              {loading ? 'Adding...' : 'Add User'}
             </Button>
           </div>
         </DialogContent>

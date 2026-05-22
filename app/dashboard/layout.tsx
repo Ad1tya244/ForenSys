@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { CopilotSidebar } from '@/components/copilot/copilot-sidebar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -74,15 +74,52 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const { metrics, notifications, unreadCount, markAllRead, connectBackend, backendConnected } = useAppStore();
+  const {
+    metrics,
+    notifications,
+    unreadCount,
+    markAllRead,
+    connectBackend,
+    backendConnected,
+    currentUser,
+    hasPermission,
+    logout,
+  } = useAppStore();
 
   useEffect(() => {
     setMounted(true);
     connectBackend();
   }, [connectBackend]);
 
+  // Protect dashboard routes
+  useEffect(() => {
+    if (mounted && !currentUser) {
+      router.push('/login');
+    }
+  }, [mounted, currentUser, router]);
+
+  // Sidebar navigation permissions mapping
+  const navItemPermissions: Record<string, string> = {
+    '/dashboard/alerts': 'view_alerts',
+    '/dashboard/threat-intelligence': 'view_alerts',
+    '/dashboard/incidents': 'view_incidents',
+    '/dashboard/forensics': 'view_forensics',
+    '/dashboard/automation': 'manage_playbooks',
+    '/dashboard/playbooks': 'manage_playbooks',
+    '/dashboard/logs': 'view_logs',
+    '/dashboard/threat-hunting': 'run_hunt',
+    '/dashboard/rbac': 'manage_users',
+    '/dashboard/analytics': 'view_analytics',
+    '/dashboard/settings': 'manage_settings',
+  };
+
+  const visibleNavItems = navItems.filter((item) => {
+    const perm = navItemPermissions[item.href];
+    return !perm || hasPermission(perm);
+  });
 
   const currentPage = navItems.find(
     (item) =>
@@ -130,7 +167,7 @@ export default function DashboardLayout({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               pathname === item.href ||
@@ -293,7 +330,7 @@ export default function DashboardLayout({
                   <AnimatePresence>
                     {sidebarOpen && (
                       <span className="text-xs text-foreground font-medium hidden sm:block">
-                        Analyst
+                        {mounted ? (currentUser?.name || 'Analyst') : 'Analyst'}
                       </span>
                     )}
                   </AnimatePresence>
@@ -301,14 +338,21 @@ export default function DashboardLayout({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="bg-card border-border/50">
                 <div className="px-3 py-2 border-b border-border/50">
-                  <p className="text-sm font-medium text-foreground">SOC Analyst</p>
-                  <p className="text-xs text-muted-foreground">analyst@forensys.io</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {mounted ? (currentUser?.name || 'SOC Analyst') : 'SOC Analyst'}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {mounted ? (currentUser?.email || 'analyst@forensys.io') : 'analyst@forensys.io'}
+                  </p>
                 </div>
                 <DropdownMenuItem className="text-muted-foreground hover:text-foreground cursor-pointer">
                   <User className="w-4 h-4 mr-2" /> Profile
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-border/50" />
-                <DropdownMenuItem className="text-red-400 hover:text-red-300 cursor-pointer">
+                <DropdownMenuItem 
+                  onClick={logout}
+                  className="text-red-400 hover:text-red-300 cursor-pointer"
+                >
                   <LogOut className="w-4 h-4 mr-2" /> Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, EvidenceItem } from '@/lib/app-store';
 import { toast } from 'sonner';
+import { AccessDenied } from '@/components/rbac/access-denied';
 
 const renderStructuredPayload = (item: EvidenceItem) => {
   if (!item.payload) {
@@ -201,10 +202,44 @@ const renderStructuredPayload = (item: EvidenceItem) => {
 };
 
 export default function ForensicsPage() {
-  const { evidenceItems, authenticateEvidenceItem } = useAppStore();
+  const { evidenceItems, authenticateEvidenceItem, hasPermission } = useAppStore();
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
   const [filter, setFilter] = useState('all');
   const [detailsTab, setDetailsTab] = useState<'structured' | 'raw'>('structured');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Keep selectedEvidence in sync when evidenceItems change or first load
+  useEffect(() => {
+    if (evidenceItems.length > 0 && !selectedEvidence) {
+      setSelectedEvidence(evidenceItems[0]);
+    }
+  }, [evidenceItems, selectedEvidence]);
+
+  useEffect(() => {
+    setDetailsTab('structured');
+  }, [selectedEvidence?.id]);
+
+  const filteredItems = evidenceItems.filter((item) => {
+    if (filter === 'all') return true;
+    return item.type.toLowerCase() === filter.toLowerCase();
+  });
+
+  // Handle selected item falling out of filtered list
+  useEffect(() => {
+    if (selectedEvidence && !filteredItems.some(item => item.id === selectedEvidence.id)) {
+      setSelectedEvidence(filteredItems[0] || null);
+    }
+  }, [filter, filteredItems, selectedEvidence]);
+
+  if (!mounted) return null;
+
+  if (!hasPermission('view_forensics')) {
+    return <AccessDenied permission="view_forensics" />;
+  }
 
   const handleDownloadJSON = (item: EvidenceItem) => {
     try {
@@ -250,28 +285,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
     }
   };
 
-  // Keep selectedEvidence in sync when evidenceItems change or first load
-  useEffect(() => {
-    if (evidenceItems.length > 0 && !selectedEvidence) {
-      setSelectedEvidence(evidenceItems[0]);
-    }
-  }, [evidenceItems, selectedEvidence]);
-
-  useEffect(() => {
-    setDetailsTab('structured');
-  }, [selectedEvidence?.id]);
-
-  const filteredItems = evidenceItems.filter((item) => {
-    if (filter === 'all') return true;
-    return item.type.toLowerCase() === filter.toLowerCase();
-  });
-
-  // Handle selected item falling out of filtered list
-  useEffect(() => {
-    if (selectedEvidence && !filteredItems.some(item => item.id === selectedEvidence.id)) {
-      setSelectedEvidence(filteredItems[0] || null);
-    }
-  }, [filter, filteredItems, selectedEvidence]);
+  // Handled inside initial useEffects to preserve execution order
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -482,10 +496,22 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                 {/* Actions */}
                 <div className="border-t border-border/50 pt-4 flex gap-2">
                   <Button
+                    onClick={() => {
+                      authenticateEvidenceItem(selectedEvidence.id);
+                      toast.success('Evidence Authenticated', { description: 'Added verified checksum to chain of custody.' });
+                    }}
+                    className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground flex items-center justify-center gap-1.5"
+                    size="sm"
+                    disabled={selectedEvidence.status === 'Authenticated' || !hasPermission('manage_incidents')}
+                  >
+                    Authenticate Evidence
+                  </Button>
+                  <Button
                     onClick={() => handleDownloadJSON(selectedEvidence)}
                     variant="outline"
                     className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
                     size="sm"
+                    disabled={!hasPermission('export_forensics')}
                   >
                     Download JSON
                   </Button>
@@ -494,6 +520,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                     variant="outline"
                     className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
                     size="sm"
+                    disabled={!hasPermission('export_forensics')}
                   >
                     Export Report
                   </Button>

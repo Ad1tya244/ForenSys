@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Bell, Shield, Link2, Sliders } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Bell, Shield, Link2, Sliders, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,36 +10,44 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, currentUser, updateUserProfile } = useAppStore();
   const [localSettings, setLocalSettings] = useState({ ...settings });
+  const [name, setName] = useState(currentUser?.name || '');
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!dirty) {
       setLocalSettings({ ...settings });
+      if (currentUser) {
+        setName(currentUser.name);
+      }
     }
-  }, [settings, dirty]);
+  }, [settings, currentUser, dirty]);
 
   const update = (patch: Partial<typeof localSettings>) => {
     setLocalSettings((s) => ({ ...s, ...patch }));
     setDirty(true);
   };
 
-  const updateProfile = (field: 'name' | 'email' | 'role', value: string) => {
-    setLocalSettings((s) => ({
-      ...s,
-      profile: {
-        ...(s.profile || { name: '', email: '', role: '' }),
-        [field]: value,
-      },
-    }));
-    setDirty(true);
-  };
-
-  const save = () => {
-    updateSettings(localSettings);
-    setDirty(false);
-    toast.success('Settings saved', { description: 'Your configuration has been updated.' });
+  const save = async () => {
+    try {
+      if (currentUser && name !== currentUser.name) {
+        await updateUserProfile(name);
+      }
+      const updatedSettings = {
+        ...localSettings,
+        profile: {
+          name: name,
+          email: currentUser?.email || '',
+          role: currentUser?.role || '',
+        }
+      };
+      updateSettings(updatedSettings);
+      setDirty(false);
+      toast.success('Settings saved', { description: 'Your configuration has been updated.' });
+    } catch (err: any) {
+      toast.error('Failed to save settings', { description: err.message || 'Error occurred.' });
+    }
   };
 
   const toggleIntegration = (name: string) => {
@@ -51,8 +59,6 @@ export default function SettingsPage() {
     const isCurrentlyConnected = integrations.find((i) => i.name === name)?.connected;
     toast.info(`${name} ${!isCurrentlyConnected ? 'connected' : 'disconnected'}`);
   };
-
-  const profile = localSettings.profile || { name: '', email: '', role: '' };
 
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5">
@@ -82,21 +88,42 @@ export default function SettingsPage() {
             <h2 className="text-sm font-semibold text-foreground">Profile</h2>
           </div>
           <div className="space-y-3">
-            {[
-              { label: 'Display Name', key: 'name' as const },
-              { label: 'Email', key: 'email' as const },
-              { label: 'Role', key: 'role' as const },
-            ].map((field) => (
-              <div key={field.key}>
-                <label className="text-xs text-muted-foreground block mb-1">{field.label}</label>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Display Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setDirty(true);
+                }}
+                className="w-full bg-input border border-border/50 rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-accent/50 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Email Address</label>
+              <div className="relative flex items-center">
                 <input
                   type="text"
-                  value={profile[field.key]}
-                  onChange={(e) => updateProfile(field.key, e.target.value)}
-                  className="w-full bg-input border border-border/50 rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-accent/50 transition-colors"
+                  value={currentUser?.email || ''}
+                  disabled
+                  className="w-full bg-muted/15 border border-border/30 rounded-md px-3 py-2 pl-9 text-sm text-muted-foreground outline-none cursor-not-allowed select-none"
                 />
+                <Lock className="absolute left-3 w-3.5 h-3.5 text-muted-foreground/60" />
               </div>
-            ))}
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Assigned Role</label>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={currentUser?.role || ''}
+                  disabled
+                  className="w-full bg-muted/15 border border-border/30 rounded-md px-3 py-2 pl-9 text-sm text-muted-foreground outline-none cursor-not-allowed select-none capitalize"
+                />
+                <Lock className="absolute left-3 w-3.5 h-3.5 text-muted-foreground/60" />
+              </div>
+            </div>
           </div>
         </Card>
 

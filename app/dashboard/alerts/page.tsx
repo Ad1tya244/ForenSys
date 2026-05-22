@@ -16,9 +16,10 @@ import {
 import { Filter, Search, AlertTriangle, Shield, Clock, CheckCircle2, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { AccessDenied } from '@/components/rbac/access-denied';
 
 export default function AlertsPage() {
-  const { alerts, acknowledgeAlert, resolveAlert, escalateAlertToIncident } = useAppStore();
+  const { alerts, acknowledgeAlert, resolveAlert, escalateAlertToIncident, hasPermission } = useAppStore();
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
@@ -90,6 +91,10 @@ export default function AlertsPage() {
   };
 
   if (!mounted) return null;
+
+  if (!hasPermission('view_alerts')) {
+    return <AccessDenied permission="view_alerts" />;
+  }
 
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5">
@@ -310,7 +315,7 @@ export default function AlertsPage() {
                     <Button
                       className="w-full bg-red-600 hover:bg-red-700 text-white gap-2 focus-visible:ring-red-600/50 focus-visible:border-red-600 focus-visible:ring-[3px]"
                       onClick={() => handleEscalate(selectedAlert.id, selectedAlert.title)}
-                      disabled={selectedAlert.status === 'resolved'}
+                      disabled={selectedAlert.status === 'resolved' || !hasPermission('manage_alerts')}
                     >
                       <Flame className="w-4 h-4" />
                       Escalate to Incident
@@ -320,7 +325,7 @@ export default function AlertsPage() {
                         variant="outline"
                         className="border-border/50 gap-2"
                         onClick={() => handleAcknowledge(selectedAlert.id)}
-                        disabled={selectedAlert.status !== 'new'}
+                        disabled={selectedAlert.status !== 'new' || !hasPermission('manage_alerts')}
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         Acknowledge
@@ -329,7 +334,7 @@ export default function AlertsPage() {
                         variant="outline"
                         className="border-green-700/50 text-green-400 hover:bg-green-900/20 gap-2"
                         onClick={() => handleResolve(selectedAlert.id)}
-                        disabled={selectedAlert.status === 'resolved'}
+                        disabled={selectedAlert.status === 'resolved' || !hasPermission('manage_alerts')}
                       >
                         <Shield className="w-4 h-4" />
                         Resolve
