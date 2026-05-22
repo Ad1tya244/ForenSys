@@ -123,6 +123,8 @@ forensys_*.csv
 forensys_*.json
 forensys_report_*.txt
 forensys_evidence_*.json
+threat_hunt_report_*.csv
+
 
 # ─── Deployment ──────────────────────────────────────────────────────────────
 .vercel

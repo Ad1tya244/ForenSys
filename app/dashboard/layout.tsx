@@ -336,25 +336,70 @@ export default function DashboardLayout({
                   </AnimatePresence>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-card border-border/50">
-                <div className="px-3 py-2 border-b border-border/50">
-                  <p className="text-sm font-medium text-foreground">
-                    {mounted ? (currentUser?.name || 'SOC Analyst') : 'SOC Analyst'}
-                  </p>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {mounted ? (currentUser?.email || 'analyst@forensys.io') : 'analyst@forensys.io'}
-                  </p>
+              <DropdownMenuContent align="end" className="w-64 bg-card border-border/50 shadow-xl rounded-xl overflow-hidden p-0">
+                {/* User identity header */}
+                <div className="px-4 py-3.5 border-b border-border/40" style={{ background: 'hsl(220 13% 10%)' }}>
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className="w-9 h-9 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center shrink-0">
+                      <User className="w-4.5 h-4.5 text-accent" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {mounted ? (currentUser?.name || 'SOC Analyst') : 'SOC Analyst'}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
+                        {mounted ? (currentUser?.email || 'analyst@forensys.io') : 'analyst@forensys.io'}
+                      </p>
+                      {/* Role + status row */}
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="text-[9px] font-bold font-mono uppercase tracking-widest px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/25">
+                          {mounted ? (currentUser?.role || 'analyst') : 'analyst'}
+                        </span>
+                        {mounted && currentUser?.department && (
+                          <span className="text-[9px] font-mono text-muted-foreground truncate">
+                            {currentUser.department}
+                          </span>
+                        )}
+                        <div className="ml-auto flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                          <span className="text-[8px] font-mono text-green-400 uppercase tracking-wider">Active</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <DropdownMenuItem className="text-muted-foreground hover:text-foreground cursor-pointer">
-                  <User className="w-4 h-4 mr-2" /> Profile
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-border/50" />
-                <DropdownMenuItem 
-                  onClick={logout}
-                  className="text-red-400 hover:text-red-300 cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4 mr-2" /> Sign out
-                </DropdownMenuItem>
+
+                {/* Menu items */}
+                <div className="py-1.5 px-1.5">
+                  <DropdownMenuItem
+                    onClick={() => router.push('/dashboard/settings')}
+                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-muted-foreground cursor-pointer text-xs transition-colors focus:bg-white/5 focus:text-foreground data-[highlighted]:bg-white/5 data-[highlighted]:text-foreground hover:bg-white/5 hover:text-foreground"
+                  >
+                    <div className="w-6 h-6 rounded-md bg-white/5 flex items-center justify-center shrink-0">
+                      <User className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-medium">Profile</div>
+                      <div className="text-[9px] text-muted-foreground/60 font-mono">Manage your account settings</div>
+                    </div>
+                  </DropdownMenuItem>
+                </div>
+
+                <div className="px-1.5 pb-1.5 border-t border-border/40 pt-1.5">
+                  <DropdownMenuItem
+                    onClick={logout}
+                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-red-400 cursor-pointer text-xs transition-colors focus:bg-red-500/10 focus:text-red-300 data-[highlighted]:bg-red-500/10 data-[highlighted]:text-red-300 hover:bg-red-500/10 hover:text-red-300"
+                  >
+                    <div className="w-6 h-6 rounded-md bg-red-500/10 flex items-center justify-center shrink-0">
+                      <LogOut className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-medium">Sign out</div>
+                      <div className="text-[9px] text-red-400/60 font-mono">End your current session</div>
+                    </div>
+                  </DropdownMenuItem>
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

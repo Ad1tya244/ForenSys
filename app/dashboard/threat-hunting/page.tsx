@@ -871,7 +871,7 @@ export default function ThreatHuntingPage() {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-950/5 to-transparent pointer-events-none" />
 
       {/* Header Panel */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass p-4 rounded-xl border border-border/60 relative overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden py-2">
         <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 rounded-full blur-2xl pointer-events-none" />
         <div className="z-10">
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
@@ -884,19 +884,17 @@ export default function ThreatHuntingPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={handleExportCSV}
             disabled={matchCount === 0}
-            className="border-border/60 hover:bg-muted text-foreground h-9"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <Download className="w-4 h-4 mr-2 text-accent" /> Export Hunt
-          </Button>
-          <Badge className={`h-8 font-mono flex items-center gap-2 border ${metrics?.threat_level === 'critical' ? 'bg-red-950/40 text-red-400 border-red-800' : 'bg-cyan-950/40 text-cyan-400 border-cyan-800'}`}>
+            <Download className="w-4 h-4 text-accent" /> Export Hunt
+          </button>
+          <div className={`flex items-center gap-1.5 font-mono text-xs ${metrics?.threat_level === 'critical' ? 'text-red-400' : 'text-cyan-400'}`}>
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
             SOC Live Stream Connected
-          </Badge>
+          </div>
         </div>
       </div>
 
@@ -937,7 +935,7 @@ export default function ThreatHuntingPage() {
       {/* Main Console & Query Inputs */}
       <div className="space-y-3">
         {/* Search Console */}
-        <div className="glass rounded-xl p-4 border border-border/60 space-y-4">
+        <div className="space-y-4">
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
