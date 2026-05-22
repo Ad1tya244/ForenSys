@@ -45,7 +45,7 @@ export default function AnalyticsPage() {
   // Avg Response Time / MTTR
   const resolvedIncidents = incidents.filter((i) => i.status === 'resolved');
   let avgResponseMin = 0;
-  let responseChange = -12;
+  let responseChange: number | null = null;
   const hasResolved = resolvedIncidents.length > 0;
 
   if (hasResolved) {
@@ -55,43 +55,96 @@ export default function AnalyticsPage() {
       return sum + Math.max(0, end - start);
     }, 0);
     avgResponseMin = Math.round(totalDurationMs / resolvedIncidents.length / 1000 / 60);
-    responseChange = -15; // Show improved response if we resolved incidents
-  } else {
-    const unresolvedHeavyAlerts = alerts.filter(
-      (a) => (a.severity === 'critical' || a.severity === 'high') && a.status !== 'resolved'
-    ).length;
-    avgResponseMin = 15 + unresolvedHeavyAlerts * 4;
+
+    // Calculate responseChange if we have at least 2 resolved incidents
+    if (resolvedIncidents.length >= 2) {
+      const sortedIncidents = [...resolvedIncidents].sort(
+        (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime()
+      );
+      const mid = Math.floor(sortedIncidents.length / 2);
+      const firstHalf = sortedIncidents.slice(0, mid);
+      const secondHalf = sortedIncidents.slice(mid);
+
+      const durationFirst = firstHalf.reduce((sum, inc) => {
+        const start = new Date(inc.createdAt).getTime();
+        const end = new Date(inc.lastUpdated).getTime();
+        return sum + Math.max(0, end - start);
+      }, 0);
+      const avgFirst = durationFirst / firstHalf.length / 1000 / 60;
+
+      const durationSecond = secondHalf.reduce((sum, inc) => {
+        const start = new Date(inc.createdAt).getTime();
+        const end = new Date(inc.lastUpdated).getTime();
+        return sum + Math.max(0, end - start);
+      }, 0);
+      const avgSecond = durationSecond / secondHalf.length / 1000 / 60;
+
+      if (avgFirst > 0) {
+        responseChange = Math.round(((avgSecond - avgFirst) / avgFirst) * 100);
+      }
+    }
   }
-  const formattedMTTR = `${avgResponseMin} min`;
 
   // MTTD (Mean Time to Detect)
   const cpuLoad = metrics?.cpu_percent || 15;
-  const connVolume = metrics?.connections_total || 10;
   const mttdSec = Math.round(10 + (cpuLoad * 0.1) + (alerts.filter(a => a.status === 'new').length * 2));
   const formattedMTTD = mttdSec >= 60 ? `${(mttdSec / 60).toFixed(1)} min` : `${mttdSec} sec`;
-  const mttdChange = alerts.length > 5 ? -18 : -8;
+  
+  let mttdChange: number | null = null;
+  const oldestMetric = metricsHistory[0];
+  if (oldestMetric && metricsHistory.length >= 5) {
+    const oldCpu = oldestMetric.cpu_percent || 15;
+    const oldMttdSec = Math.round(10 + (oldCpu * 0.1));
+    if (oldMttdSec > 0) {
+      mttdChange = Math.round(((mttdSec - oldMttdSec) / oldMttdSec) * 100);
+    }
+  }
 
   // Playbook Success Rate
   const resolvedOrAckAlerts = alerts.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length;
   const playbookSuccessRate = alerts.length > 0 
-    ? Math.round(85 + (resolvedOrAckAlerts / alerts.length) * 14) 
-    : 96;
-  const formattedPlaybookSuccess = `${playbookSuccessRate}%`;
-  const playbookChange = playbookSuccessRate > 90 ? 3 : -2;
+    ? Math.round((resolvedOrAckAlerts / alerts.length) * 100) 
+    : null;
+  
+  let playbookChange: number | null = null;
+  if (alerts.length >= 2) {
+    const sortedAlerts = [...alerts].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const mid = Math.floor(sortedAlerts.length / 2);
+    const firstHalf = sortedAlerts.slice(0, mid);
+    const secondHalf = sortedAlerts.slice(mid);
+
+    const firstSuccess = (firstHalf.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length / firstHalf.length) * 100;
+    const secondSuccess = (secondHalf.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length / secondHalf.length) * 100;
+    playbookChange = Math.round(secondSuccess - firstSuccess);
+  }
 
   // SLA Compliance Rate
   const addressedAlerts = alerts.filter(a => a.status !== 'new').length;
   const slaComplianceRate = alerts.length > 0
     ? Math.round((addressedAlerts / alerts.length) * 1000) / 10
-    : 99.4;
-  const formattedSLA = `${slaComplianceRate}%`;
-  const slaChange = slaComplianceRate > 95 ? 0.5 : -1.5;
+    : null;
+  
+  let slaChange: number | null = null;
+  if (alerts.length >= 2) {
+    const sortedAlerts = [...alerts].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const mid = Math.floor(sortedAlerts.length / 2);
+    const firstHalf = sortedAlerts.slice(0, mid);
+    const secondHalf = sortedAlerts.slice(mid);
+
+    const firstSLA = (firstHalf.filter(a => a.status !== 'new').length / firstHalf.length) * 100;
+    const secondSLA = (secondHalf.filter(a => a.status !== 'new').length / secondHalf.length) * 100;
+    slaChange = Math.round(secondSLA - firstSLA);
+  }
 
   const kpis = [
-    { label: 'Avg Response Time', value: formattedMTTR, change: responseChange, icon: Clock, color: 'text-accent', good: true },
-    { label: 'MTTD', value: formattedMTTD, change: mttdChange, icon: TrendingDown, color: 'text-green-400', good: true },
-    { label: 'Playbook Success', value: formattedPlaybookSuccess, change: playbookChange, icon: Shield, color: 'text-accent', good: true },
-    { label: 'SLA Compliance', value: formattedSLA, change: slaChange, icon: TrendingUp, color: 'text-green-400', good: true },
+    { label: 'Avg Response Time', value: hasResolved ? `${avgResponseMin} min` : '—', change: responseChange, icon: Clock, color: 'text-accent', lowerIsBetter: true },
+    { label: 'MTTD', value: alerts.length > 0 ? formattedMTTD : '—', change: mttdChange, icon: TrendingDown, color: 'text-green-400', lowerIsBetter: true },
+    { label: 'Playbook Success', value: playbookSuccessRate !== null ? `${playbookSuccessRate}%` : '—', change: playbookChange, icon: Shield, color: 'text-accent', lowerIsBetter: false },
+    { label: 'SLA Compliance', value: slaComplianceRate !== null ? `${slaComplianceRate}%` : '—', change: slaChange, icon: TrendingUp, color: 'text-green-400', lowerIsBetter: false },
   ];
 
   // 3. Dynamic Incident / Security Detections Trend over the last 6 time buckets
@@ -118,8 +171,8 @@ export default function AnalyticsPage() {
   const mttrData = Array.from({ length: 6 }).map((_, idx) => {
     const offset = 5 - idx;
     const label = `T-${offset * 10}m`;
-    const mttdValue = Math.max(0.5, Number(((10 + (metrics?.cpu_percent || 15) * 0.05 + (alerts.length * 0.5) - idx * 0.2) / 60).toFixed(1)));
-    const mttrValue = Math.max(10, avgResponseMin - (5 - idx) * 2);
+    const mttdValue = alerts.length > 0 ? Math.max(0.1, Number(((10 + (metrics?.cpu_percent || 15) * 0.05 + (alerts.filter(a => a.status === 'new').length * 0.5) - idx * 0.2) / 60).toFixed(1))) : 0;
+    const mttrValue = avgResponseMin > 0 ? Math.max(1, avgResponseMin - (5 - idx) * 2) : 0;
 
     return {
       interval: label,
@@ -130,7 +183,7 @@ export default function AnalyticsPage() {
 
   // 5. Dynamic SOC Maturity Radar Chart
   const detectionMaturity = Math.min(100, 75 + (alerts.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length * 3));
-  const responseMaturity = Math.min(100, Math.round(slaComplianceRate * 0.9));
+  const responseMaturity = slaComplianceRate !== null ? Math.min(100, Math.round(slaComplianceRate * 0.9)) : 0;
   const containmentMaturity = Math.min(100, 70 + (incidents.filter(i => i.status === 'contained' || i.status === 'resolved').length * 10));
   const recoveryMaturity = Math.min(100, 65 + (incidents.filter(i => i.status === 'resolved').length * 15));
   const eradicationMaturity = Math.min(100, 60 + (processes.length > 0 ? 20 : 0));
@@ -240,10 +293,21 @@ export default function AnalyticsPage() {
                 <Icon className={`w-4 h-4 ${kpi.color}`} />
               </div>
               <div className={`text-2xl font-bold font-mono ${kpi.color}`}>{kpi.value}</div>
-              <div className={`text-xs flex items-center gap-1 ${kpi.change > 0 === kpi.good ? 'text-green-400' : 'text-red-400'}`}>
-                {kpi.change > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                {Math.abs(kpi.change)}% vs last period
-              </div>
+              {kpi.change !== null && kpi.change !== undefined ? (
+                <div className={`text-xs flex items-center gap-1 ${
+                  kpi.change === 0 ? 'text-muted-foreground' : 
+                  (kpi.change < 0 === kpi.lowerIsBetter ? 'text-green-400' : 'text-red-400')
+                }`}>
+                  {kpi.change > 0 ? (
+                    <TrendingUp className="w-3 h-3" />
+                  ) : kpi.change < 0 ? (
+                    <TrendingDown className="w-3 h-3" />
+                  ) : null}
+                  {Math.abs(kpi.change)}% vs last period
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">No comparison data</div>
+              )}
             </motion.div>
           );
         })}

@@ -147,7 +147,7 @@ export function CopilotSidebar() {
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 min-h-0 px-3 py-2">
+        <ScrollArea className="flex-1 min-h-0 px-3 py-2 [&_[data-slot=scroll-area-viewport]>div]:block!">
           <div className="space-y-3 pr-1">
             <AnimatePresence>
               {messages.map((msg) => (
@@ -163,7 +163,7 @@ export function CopilotSidebar() {
                   }`}>
                     {msg.role === 'user' ? 'U' : <Sparkles className="w-3.5 h-3.5" />}
                   </div>
-                  <div className={`flex-1 p-2.5 rounded-lg text-xs leading-relaxed ${
+                  <div className={`flex-1 min-w-0 p-2.5 rounded-lg text-xs leading-relaxed ${
                     msg.role === 'user'
                       ? 'bg-accent/10 border border-accent/30 text-foreground whitespace-pre-wrap'
                       : 'bg-card border border-border/50 text-foreground'
