@@ -219,6 +219,112 @@ def api_devices():
     return get_arp_devices()
 
 
+# ── Reports persistence and endpoints ─────────────────────────────────────────
+
+import os
+
+REPORTS_FILE = os.path.join(os.path.dirname(__file__), "reports.json")
+
+def load_reports() -> List[dict]:
+    if not os.path.exists(REPORTS_FILE):
+        return []
+    try:
+        with open(REPORTS_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading reports: {e}")
+        return []
+
+def save_reports(reports: List[dict]) -> None:
+    try:
+        with open(REPORTS_FILE, "w") as f:
+            json.dump(reports, f, indent=2, default=str)
+    except Exception as e:
+        print(f"Error saving reports: {e}")
+
+_all_reports = load_reports()
+
+
+@app.get("/api/reports")
+def api_get_reports():
+    return _all_reports
+
+
+@app.post("/api/reports")
+def api_create_report(report: dict):
+    _all_reports.insert(0, report)  # Insert newest first
+    save_reports(_all_reports)
+    return report
+
+
+@app.delete("/api/reports/{report_id}")
+def api_delete_report(report_id: str):
+    global _all_reports
+    _all_reports = [r for r in _all_reports if r.get("id") != report_id]
+    save_reports(_all_reports)
+    return {"status": "success"}
+
+
+# ── Settings persistence and endpoints ────────────────────────────────────────
+
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+DEFAULT_SETTINGS = {
+    "notifyOnCritical": True,
+    "notifyOnHigh": True,
+    "dailySummary": True,
+    "criticalThreshold": 90,
+    "highThreshold": 70,
+    "mediumThreshold": 40,
+    "profile": {
+        "name": "SOC Analyst",
+        "email": "analyst@forensys.io",
+        "role": "Senior Analyst"
+    },
+    "integrations": [
+        {"name": "Emerging Threats Blocklist", "connected": True},
+        {"name": "ipapi.co Geolocation", "connected": True},
+        {"name": "psutil System Monitor", "connected": True},
+        {"name": "macOS Log Stream", "connected": True},
+        {"name": "AbuseIPDB (optional)", "connected": False}
+    ]
+}
+
+def load_settings() -> dict:
+    if not os.path.exists(SETTINGS_FILE):
+        return DEFAULT_SETTINGS
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading settings: {e}")
+        return DEFAULT_SETTINGS
+
+def save_settings(settings: dict) -> None:
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=2)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
+_current_settings = load_settings()
+
+
+@app.get("/api/settings")
+def api_get_settings():
+    return _current_settings
+
+
+@app.post("/api/settings")
+def api_save_settings(settings: dict):
+    global _current_settings
+    _current_settings = settings
+    save_settings(_current_settings)
+    return _current_settings
+
+
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

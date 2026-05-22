@@ -109,3 +109,32 @@
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
 }
+
+@media print {
+  body {
+    background: #090d16 !important;
+    color: #e2e8f0 !important;
+  }
+  /* Hide everything except the print area */
+  body * {
+    visibility: hidden;
+  }
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none !important;
+    background: transparent !important;
+  }
+  /* Hide print trigger buttons during print */
+  .no-print {
+    display: none !important;
+  }
+}
+

@@ -1,0 +1,35 @@
+{
+  "notifyOnCritical": true,
+  "notifyOnHigh": true,
+  "dailySummary": true,
+  "criticalThreshold": 90,
+  "highThreshold": 70,
+  "mediumThreshold": 40,
+  "profile": {
+    "name": "SOC Analyst",
+    "email": "analyst@forensys.io",
+    "role": "Senior Analyst"
+  },
+  "integrations": [
+    {
+      "name": "Emerging Threats Blocklist",
+      "connected": true
+    },
+    {
+      "name": "ipapi.co Geolocation",
+      "connected": true
+    },
+    {
+      "name": "psutil System Monitor",
+      "connected": true
+    },
+    {
+      "name": "macOS Log Stream",
+      "connected": true
+    },
+    {
+      "name": "AbuseIPDB (optional)",
+      "connected": false
+    }
+  ]
+}

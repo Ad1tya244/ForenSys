@@ -128,6 +128,76 @@ export async function checkBackendAlive(): Promise<boolean> {
   }
 }
 
+// ── Reports REST helpers ──────────────────────────────────────────────────────
+
+export interface SavedReport {
+  id: string;
+  name: string;
+  type: string;
+  date: string;
+  startDate: string;
+  endDate: string;
+  pages: number;
+  size: string;
+  data: any;
+}
+
+export async function fetchReports(): Promise<SavedReport[]> {
+  const res = await fetch(`${BACKEND_URL}/api/reports`);
+  return res.json();
+}
+
+export async function saveReport(report: SavedReport): Promise<SavedReport> {
+  const res = await fetch(`${BACKEND_URL}/api/reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(report),
+  });
+  return res.json();
+}
+
+export async function deleteReport(id: string): Promise<{ status: string }> {
+  const res = await fetch(`${BACKEND_URL}/api/reports/${id}`, {
+    method: 'DELETE',
+  });
+  return res.json();
+}
+
+
+// ── Settings REST helpers ─────────────────────────────────────────────────────
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  role: string;
+}
+
+export interface AppSettings {
+  notifyOnCritical: boolean;
+  notifyOnHigh: boolean;
+  dailySummary: boolean;
+  criticalThreshold: number;
+  highThreshold: number;
+  mediumThreshold: number;
+  profile: UserProfile;
+  integrations: { name: string; connected: boolean }[];
+}
+
+export async function fetchSettings(): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/api/settings`);
+  return res.json();
+}
+
+export async function saveSettings(settings: AppSettings): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  return res.json();
+}
+
+
 // ── WebSocket manager ─────────────────────────────────────────────────────────
 
 type SnapshotHandler = (snapshot: BackendSnapshot) => void;

@@ -14,6 +14,9 @@ import {
   RealAlert,
   ArpDevice,
   checkBackendAlive,
+  AppSettings,
+  fetchSettings,
+  saveSettings,
 } from './api-client';
 
 // ── Re-export types so pages don't need to change their imports ──────────────
@@ -69,15 +72,7 @@ export interface AppNotification {
   read: boolean;
 }
 
-export interface AppSettings {
-  notifyOnCritical: boolean;
-  notifyOnHigh: boolean;
-  dailySummary: boolean;
-  criticalThreshold: number;
-  highThreshold: number;
-  mediumThreshold: number;
-  integrations: { name: string; connected: boolean }[];
-}
+// AppSettings is now imported from ./api-client
 
 // ── Store state ───────────────────────────────────────────────────────────────
 
@@ -151,6 +146,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     criticalThreshold: 90,
     highThreshold: 70,
     mediumThreshold: 40,
+    profile: {
+      name: 'SOC Analyst',
+      email: 'analyst@forensys.io',
+      role: 'Senior Analyst',
+    },
     integrations: [
       { name: 'Emerging Threats Blocklist', connected: true },
       { name: 'ipapi.co Geolocation', connected: true },
@@ -167,6 +167,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     // First check if backend is reachable
     checkBackendAlive().then((alive) => {
       set({ backendChecked: true, backendConnected: alive });
+      if (alive) {
+        fetchSettings()
+          .then((backendSettings) => {
+            if (backendSettings) {
+              set({ settings: backendSettings });
+            }
+          })
+          .catch((err) => console.error('Error fetching settings:', err));
+      }
     });
 
     _socket = new BackendSocket((snapshot) => {
@@ -464,6 +473,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   unreadCount: () => get().notifications.filter((n) => !n.read).length,
 
   // ── Settings ────────────────────────────────────────────────────────────────
-  updateSettings: (patch) =>
-    set((s) => ({ settings: { ...s.settings, ...patch } })),
+  updateSettings: (patch) => {
+    const updated = { ...get().settings, ...patch };
+    set({ settings: updated });
+    saveSettings(updated).catch((err) => {
+      console.error('Error saving settings:', err);
+    });
+  },
 }));
