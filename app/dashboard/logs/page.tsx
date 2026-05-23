@@ -10,6 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, LogEntry } from '@/lib/app-store';
 import { useCopilotStore } from '@/lib/copilot-store';
@@ -295,8 +302,8 @@ export default function LogsPage() {
               ({totalCount > 0 ? ((errorCount / totalCount) * 100).toFixed(1) : 0}%)
             </span>
           </div>
-          <div className="w-full bg-border/20 h-1 rounded-full overflow-hidden mt-1.5">
-            <div className="bg-red-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (errorCount / totalCount) * 100 : 0}%` }} />
+          <div className="w-full bg-border/20 h-1.5 rounded-full overflow-hidden mt-1.5">
+            <div className="h-full rounded-full" style={{ width: `${totalCount > 0 ? (errorCount / totalCount) * 100 : 0}%`, backgroundColor: '#ef4444' }} />
           </div>
         </div>
 
@@ -311,8 +318,8 @@ export default function LogsPage() {
               ({totalCount > 0 ? ((warnCount / totalCount) * 100).toFixed(1) : 0}%)
             </span>
           </div>
-          <div className="w-full bg-border/20 h-1 rounded-full overflow-hidden mt-1.5">
-            <div className="bg-yellow-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (warnCount / totalCount) * 100 : 0}%` }} />
+          <div className="w-full bg-border/20 h-1.5 rounded-full overflow-hidden mt-1.5">
+            <div className="h-full rounded-full" style={{ width: `${totalCount > 0 ? (warnCount / totalCount) * 100 : 0}%`, backgroundColor: '#eab308' }} />
           </div>
         </div>
 
@@ -332,15 +339,15 @@ export default function LogsPage() {
 
       {/* Visual Level Stacked Breakdown Bar */}
       {totalCount > 0 && (
-        <div className="glass p-2 border border-border/40 rounded-lg space-y-1">
+        <div className="glass p-2.5 border border-border/40 rounded-lg space-y-2">
           <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-            <span>LOG LEVEL DENSITY</span>
-            <span>INFO: {infoCount} | WARN: {warnCount} | ERROR: {errorCount}</span>
+            <span className="font-bold tracking-wider">LOG LEVEL DENSITY</span>
+            <span className="font-bold">INFO: {infoCount} | WARN: {warnCount} | ERROR: {errorCount}</span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden flex bg-border/10">
-            <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${(infoCount / totalCount) * 100}%` }} title={`Info: ${infoCount}`} />
-            <div className="bg-yellow-500 h-full transition-all duration-300" style={{ width: `${(warnCount / totalCount) * 100}%` }} title={`Warn: ${warnCount}`} />
-            <div className="bg-red-500 h-full transition-all duration-300" style={{ width: `${(errorCount / totalCount) * 100}%` }} title={`Error: ${errorCount}`} />
+          <div className="h-1.5 rounded-full overflow-hidden flex bg-black/40 border border-border/20">
+            <div className="h-full transition-all duration-300" style={{ width: `${(infoCount / totalCount) * 100}%`, backgroundColor: '#3b82f6' }} title={`Info: ${infoCount}`} />
+            <div className="h-full transition-all duration-300" style={{ width: `${(warnCount / totalCount) * 100}%`, backgroundColor: '#eab308' }} title={`Warn: ${warnCount}`} />
+            <div className="h-full transition-all duration-300" style={{ width: `${(errorCount / totalCount) * 100}%`, backgroundColor: '#ef4444' }} title={`Error: ${errorCount}`} />
           </div>
         </div>
       )}
@@ -355,6 +362,7 @@ export default function LogsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={`pl-9 pr-16 bg-input border-border/50 text-sm h-9 font-mono ${regexError ? 'border-red-500/80 focus-visible:ring-red-500' : ''}`}
+            style={{ height: '36px' }}
           />
           <div className="absolute right-1 flex items-center gap-1">
             {search && (
@@ -378,57 +386,73 @@ export default function LogsPage() {
 
         {/* Dropdowns */}
         <div className="flex flex-wrap gap-2 items-center">
-          <select
-            value={levelFilter}
-            onChange={(e) => setLevelFilter(e.target.value)}
-            className="bg-input border border-border/50 rounded-md text-xs text-foreground px-2 py-1 h-9 font-mono"
-          >
-            <option value="all">All Levels</option>
-            <option value="info">INFO</option>
-            <option value="warn">WARN</option>
-            <option value="error">ERROR</option>
-          </select>
+          <Select value={levelFilter} onValueChange={setLevelFilter}>
+            <SelectTrigger 
+              className="h-9 w-[120px] text-xs border-border/50 bg-input text-foreground font-mono"
+              style={{ height: '36px' }}
+            >
+              <SelectValue placeholder="All Levels" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
+              <SelectItem value="all">All Levels</SelectItem>
+              <SelectItem value="info">INFO</SelectItem>
+              <SelectItem value="warn">WARN</SelectItem>
+              <SelectItem value="error">ERROR</SelectItem>
+            </SelectContent>
+          </Select>
 
-          <select
-            value={processFilter}
-            onChange={(e) => setProcessFilter(e.target.value)}
-            className="bg-input border border-border/50 rounded-md text-xs text-foreground px-2 py-1 h-9 max-w-40 font-mono"
-          >
-            <option value="all">All Processes</option>
-            {processes.map((proc) => (
-              <option key={proc} value={proc}>{proc}</option>
-            ))}
-          </select>
+          <Select value={processFilter} onValueChange={setProcessFilter}>
+            <SelectTrigger 
+              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
+              style={{ height: '36px' }}
+            >
+              <SelectValue placeholder="All Processes" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
+              <SelectItem value="all">All Processes</SelectItem>
+              {processes.map((proc) => (
+                <SelectItem key={proc} value={proc}>{proc}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <select
-            value={subsystemFilter}
-            onChange={(e) => setSubsystemFilter(e.target.value)}
-            className="bg-input border border-border/50 rounded-md text-xs text-foreground px-2 py-1 h-9 max-w-40 font-mono"
-          >
-            <option value="all">All Subsystems</option>
-            {subsystems.map((sub) => (
-              <option key={sub} value={sub}>{sub}</option>
-            ))}
-          </select>
+          <Select value={subsystemFilter} onValueChange={setSubsystemFilter}>
+            <SelectTrigger 
+              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
+              style={{ height: '36px' }}
+            >
+              <SelectValue placeholder="All Subsystems" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
+              <SelectItem value="all">All Subsystems</SelectItem>
+              {subsystems.map((sub) => (
+                <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="bg-input border border-border/50 rounded-md text-xs text-foreground px-2 py-1 h-9 max-w-40 font-mono"
-          >
-            <option value="all">All Categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger 
+              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
+              style={{ height: '36px' }}
+            >
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {/* Tools */}
           <Button
-            size="sm"
             variant="outline"
             className="h-9 px-3 text-xs border-border/50 gap-1.5 bg-background/50 hover:bg-accent/10"
             onClick={clearFilters}
             title="Reset Filters"
+            style={{ height: '36px' }}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
@@ -436,22 +460,22 @@ export default function LogsPage() {
           <div className="h-6 w-px bg-border/40 mx-1" />
 
           <Button
-            size="sm"
             variant="outline"
             className="h-9 px-2.5 text-xs border-border/50 gap-1 bg-background/50 hover:bg-accent/10 font-mono"
             onClick={exportToCSV}
             title="Download CSV"
+            style={{ height: '36px' }}
           >
             <Download className="w-3.5 h-3.5" />
             CSV
           </Button>
 
           <Button
-            size="sm"
             variant="outline"
             className="h-9 px-2.5 text-xs border-border/50 gap-1 bg-background/50 hover:bg-accent/10 font-mono"
             onClick={exportToJSON}
             title="Download JSON"
+            style={{ height: '36px' }}
           >
             <Download className="w-3.5 h-3.5" />
             JSON

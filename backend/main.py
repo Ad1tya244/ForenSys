@@ -12,16 +12,32 @@ import json
 import threading
 import time
 import os
-import hashlib
 import secrets
-from typing import List
+from typing import List, Optional
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 import pymysql
+
+from auth_utils import (
+    hash_password_bcrypt,
+    verify_and_migrate_password,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    REFRESH_TOKEN_EXPIRE_DAYS
+)
+from schemas import (
+    SetupAdminModel,
+    LoginModel,
+    UpdateProfileModel,
+    UserSaveModel,
+    ReportCreateModel,
+    SettingsSaveModel
+)
 
 # Load env variables
 load_dotenv()
@@ -43,26 +59,50 @@ def get_db_connection():
         autocommit=True
     )
 
-def hash_password(password: str, salt: str) -> str:
-    hasher = hashlib.sha256()
-    hasher.update((password + salt).encode('utf-8'))
-    return hasher.hexdigest()
+security = HTTPBearer(auto_error=False)
 
-def generate_salt() -> str:
-    return secrets.token_hex(16)
+async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = credentials.credentials
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = payload.get("sub")
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, name, email, role, department, status, permissions FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=401, detail="User not found")
+            if user["status"] != "active":
+                raise HTTPException(status_code=401, detail="Account is inactive")
+            user["permissions"] = json.loads(user["permissions"])
+            return user
+    finally:
+        conn.close()
 
-class SetupAdminModel(BaseModel):
-    name: str
-    email: str
-    password: str
-
-class LoginModel(BaseModel):
-    email: str
-    password: str
-
-class UpdateProfileModel(BaseModel):
-    email: str
-    name: str
+def check_permissions(required_permission: str):
+    def dependency(current_user: dict = Depends(get_current_user)):
+        if required_permission not in current_user.get("permissions", []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {required_permission}"
+            )
+        return current_user
+    return dependency
 
 from collectors.logs import get_recent_logs
 from collectors.network import get_connections, get_listening_ports, get_arp_devices
@@ -206,6 +246,31 @@ async def startup() -> None:
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
+    token = ws.query_params.get("token")
+    if not token:
+        await ws.close(code=4003)
+        return
+        
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        await ws.close(code=4003)
+        return
+        
+    user_id = payload.get("sub")
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT status FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user or user["status"] != "active":
+                await ws.close(code=4003)
+                return
+    except Exception:
+        await ws.close(code=4003)
+        return
+    finally:
+        conn.close()
+
     await ws.accept()
     _clients.append(ws)
     print(f"[ws] Client connected ({len(_clients)} total)")
@@ -237,32 +302,32 @@ def health():
 
 
 @app.get("/api/metrics")
-def api_metrics():
+def api_metrics(current_user: dict = Depends(check_permissions("view_analytics"))):
     return get_system_metrics()
 
 
 @app.get("/api/connections")
-def api_connections():
+def api_connections(current_user: dict = Depends(check_permissions("view_forensics"))):
     return get_connections()
 
 
 @app.get("/api/processes")
-def api_processes():
+def api_processes(current_user: dict = Depends(check_permissions("view_forensics"))):
     return get_processes()
 
 
 @app.get("/api/logs")
-def api_logs():
+def api_logs(current_user: dict = Depends(check_permissions("view_logs"))):
     return get_recent_logs()
 
 
 @app.get("/api/alerts")
-def api_alerts():
+def api_alerts(current_user: dict = Depends(check_permissions("view_alerts"))):
     return _all_alerts
 
 
 @app.get("/api/devices")
-def api_devices():
+def api_devices(current_user: dict = Depends(check_permissions("view_forensics"))):
     return get_arp_devices()
 
 
@@ -293,19 +358,20 @@ _all_reports = load_reports()
 
 
 @app.get("/api/reports")
-def api_get_reports():
+def api_get_reports(current_user: dict = Depends(check_permissions("view_analytics"))):
     return _all_reports
 
 
 @app.post("/api/reports")
-def api_create_report(report: dict):
-    _all_reports.insert(0, report)  # Insert newest first
+def api_create_report(report: ReportCreateModel, current_user: dict = Depends(check_permissions("export_forensics"))):
+    report_dict = report.model_dump()
+    _all_reports.insert(0, report_dict)  # Insert newest first
     save_reports(_all_reports)
-    return report
+    return report_dict
 
 
 @app.delete("/api/reports/{report_id}")
-def api_delete_report(report_id: str):
+def api_delete_report(report_id: str, current_user: dict = Depends(check_permissions("export_forensics"))):
     global _all_reports
     _all_reports = [r for r in _all_reports if r.get("id") != report_id]
     save_reports(_all_reports)
@@ -358,7 +424,7 @@ _current_settings = load_settings()
 
 
 @app.get("/api/settings")
-def api_get_settings():
+def api_get_settings(current_user: dict = Depends(check_permissions("manage_settings"))):
     return _current_settings
 
 
@@ -396,13 +462,14 @@ def load_users() -> List[dict]:
 
 
 @app.post("/api/settings")
-def api_save_settings(settings: dict):
+def api_save_settings(settings: SettingsSaveModel, current_user: dict = Depends(check_permissions("manage_settings"))):
     global _current_settings
-    _current_settings = settings
+    settings_dict = settings.model_dump()
+    _current_settings = settings_dict
     save_settings(_current_settings)
     
     # If a profile name change came in, we can update it in the database
-    profile = settings.get("profile")
+    profile = settings_dict.get("profile")
     if profile and profile.get("email") and profile.get("name"):
         conn = get_db_connection()
         try:
@@ -417,22 +484,22 @@ def api_save_settings(settings: dict):
 
 
 @app.get("/api/users")
-def api_get_users():
+def api_get_users(current_user: dict = Depends(check_permissions("manage_users"))):
     return load_users()
 
 
 @app.post("/api/users")
-def api_save_user(user: dict):
-    user_id = user.get("id")
-    role = user.get("role", "viewer")
-    department = user.get("department", "Security")
-    status = user.get("status", "active")
-    name = user.get("name", "")
-    email = user.get("email", "")
-    password = user.get("password", "") # Optional password field
+def api_save_user(user: UserSaveModel, current_user: dict = Depends(check_permissions("manage_users"))):
+    user_id = user.id
+    role = user.role
+    department = user.department
+    status = user.status
+    name = user.name
+    email = user.email
+    password = user.password # Optional password field
     
     # Ensure permissions list
-    permissions = user.get("permissions")
+    permissions = user.permissions
     if not permissions:
         permissions = DEFAULT_PERMISSIONS.get(role, DEFAULT_PERMISSIONS["viewer"])
     permissions_json = json.dumps(permissions)
@@ -453,16 +520,16 @@ def api_save_user(user: dict):
                 user_id = str(int(time.time() * 1000))
 
             if password:
-                salt = generate_salt()
-                p_hash = hash_password(password, salt)
+                p_hash = hash_password_bcrypt(password)
+                salt = ""
             else:
                 if existing:
                     p_hash = existing["password_hash"]
                     salt = existing["salt"]
                 else:
                     # New user but no password provided? Give a default or require it.
-                    salt = generate_salt()
-                    p_hash = hash_password("default123", salt)
+                    p_hash = hash_password_bcrypt("default123")
+                    salt = ""
 
             if existing:
                 cursor.execute("""
@@ -482,7 +549,7 @@ def api_save_user(user: dict):
             if updated_user:
                 updated_user["permissions"] = json.loads(updated_user["permissions"])
                 return updated_user
-            return user
+            return user.model_dump()
     except Exception as e:
         print(f"Error saving user in DB: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -491,7 +558,7 @@ def api_save_user(user: dict):
 
 
 @app.delete("/api/users/{user_id}")
-def api_delete_user(user_id: str):
+def api_delete_user(user_id: str, current_user: dict = Depends(check_permissions("manage_users"))):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -523,7 +590,7 @@ def api_setup_status():
 
 
 @app.post("/api/auth/setup")
-def api_setup(data: SetupAdminModel):
+def api_setup(data: SetupAdminModel, response: Response):
     # Check if table is empty
     status = api_setup_status()
     if not status["setup_required"]:
@@ -531,8 +598,7 @@ def api_setup(data: SetupAdminModel):
     
     # Create the admin user
     user_id = str(int(time.time() * 1000))
-    salt = generate_salt()
-    p_hash = hash_password(data.password, salt)
+    p_hash = hash_password_bcrypt(data.password)
     
     role = "admin"
     department = "Security"
@@ -545,14 +611,32 @@ def api_setup(data: SetupAdminModel):
             cursor.execute("""
                 INSERT INTO users (id, name, email, role, department, status, permissions, password_hash, salt)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (user_id, data.name, data.email, role, department, user_status, permissions_json, p_hash, salt))
+            """, (user_id, data.name, data.email, role, department, user_status, permissions_json, p_hash, ""))
             
             # Retrieve the created user
             cursor.execute("SELECT id, name, email, role, department, status, permissions FROM users WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             if user:
                 user["permissions"] = json.loads(user["permissions"])
-                return user
+                
+                # Generate tokens
+                access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+                refresh_token = create_refresh_token(data={"sub": user["id"], "email": user["email"]})
+                
+                # Set cookie
+                response.set_cookie(
+                    key="refresh_token",
+                    value=refresh_token,
+                    httponly=True,
+                    secure=False,  # Set to True if HTTPS in prod
+                    samesite="lax",
+                    max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+                )
+                
+                return {
+                    "access_token": access_token,
+                    "user": user
+                }
             raise HTTPException(status_code=500, detail="Failed to retrieve created admin user")
     except Exception as e:
         print(f"Error bootstrapping admin: {e}")
@@ -562,7 +646,7 @@ def api_setup(data: SetupAdminModel):
 
 
 @app.post("/api/auth/login")
-def api_login(data: LoginModel):
+def api_login(data: LoginModel, response: Response):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -573,16 +657,41 @@ def api_login(data: LoginModel):
             if user["status"] != "active":
                 raise HTTPException(status_code=401, detail="Account is inactive")
             
-            # Verify password
-            computed = hash_password(data.password, user["salt"])
-            if computed != user["password_hash"]:
+            # Verify password and migrate if legacy sha256
+            matched, new_hash = verify_and_migrate_password(data.password, user["password_hash"], user["salt"])
+            if not matched:
                 raise HTTPException(status_code=401, detail="Invalid email or password")
             
-            # Return user details
+            # Save upgraded hash
+            if new_hash:
+                try:
+                    cursor.execute("UPDATE users SET password_hash = %s, salt = '' WHERE id = %s", (new_hash, user["id"]))
+                except Exception as e:
+                    print(f"Failed to migrate password hash for user {user['id']}: {e}")
+            
+            # Generate tokens
+            access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+            refresh_token = create_refresh_token(data={"sub": user["id"], "email": user["email"]})
+            
+            # Set cookie
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,
+                secure=False,
+                samesite="lax",
+                max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            )
+            
+            # Return user details without sensitive fields
             user.pop("password_hash")
             user.pop("salt")
             user["permissions"] = json.loads(user["permissions"])
-            return user
+            
+            return {
+                "access_token": access_token,
+                "user": user
+            }
     except HTTPException:
         raise
     except Exception as e:
@@ -592,8 +701,61 @@ def api_login(data: LoginModel):
         conn.close()
 
 
+@app.post("/api/auth/refresh")
+def api_refresh(request: Request, response: Response):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
+        
+    payload = decode_token(refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        
+    user_id = payload.get("sub")
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, name, email, role, department, status, permissions FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user or user["status"] != "active":
+                raise HTTPException(status_code=401, detail="User inactive or not found")
+                
+            user["permissions"] = json.loads(user["permissions"])
+            
+            # Generate new tokens
+            access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+            new_refresh_token = create_refresh_token(data={"sub": user["id"], "email": user["email"]})
+            
+            # Reset cookie
+            response.set_cookie(
+                key="refresh_token",
+                value=new_refresh_token,
+                httponly=True,
+                secure=False,
+                samesite="lax",
+                max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            )
+            
+            return {
+                "access_token": access_token,
+                "user": user
+            }
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/logout")
+def api_logout(response: Response):
+    response.delete_cookie("refresh_token")
+    return {"status": "success"}
+
+
 @app.post("/api/auth/update-profile")
-def api_update_profile(data: UpdateProfileModel):
+def api_update_profile(data: UpdateProfileModel, current_user: dict = Depends(get_current_user)):
+    if current_user["email"] != data.email and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to update this profile")
+        
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -609,8 +771,6 @@ def api_update_profile(data: UpdateProfileModel):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-
-
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

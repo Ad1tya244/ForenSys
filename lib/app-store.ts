@@ -26,6 +26,10 @@ import {
   bootstrapAdmin as apiBootstrapAdmin,
   login as apiLogin,
   updateProfile as apiUpdateProfile,
+  setAccessToken,
+  registerAuthErrorCallback,
+  refreshSession,
+  logoutSession,
 } from './api-client';
 
 // ── Re-export types so pages don't need to change their imports ──────────────
@@ -109,6 +113,7 @@ interface AppState {
 
   // Authentication State
   currentUser: RbacUser | null;
+  accessToken: string | null;
   setupRequired: boolean;
 
   // Actions
@@ -168,6 +173,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   notifications: [],
 
   currentUser: null,
+  accessToken: null,
   setupRequired: false,
 
   settings: {
@@ -193,6 +199,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ── Backend connection ──────────────────────────────────────────────────────
   connectBackend: () => {
+    registerAuthErrorCallback(() => {
+      get().logout();
+    });
+
     // Load currentUser from localStorage if present
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('forensys_user');
@@ -208,12 +218,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (_socket) return; // already connected
 
-    // First check if backend is reachable
-    checkBackendAlive().then((alive) => {
-      set({ backendChecked: true, backendConnected: alive });
-      if (alive) {
-        get().checkSetupStatus();
+    // First attempt to refresh token automatically from cookies
+    refreshSession()
+      .then((res) => {
+        setAccessToken(res.access_token);
+        set({ currentUser: res.user, accessToken: res.access_token, backendChecked: true, backendConnected: true });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('forensys_user', JSON.stringify(res.user));
+        }
 
+        get().checkSetupStatus();
         fetchSettings()
           .then((backendSettings) => {
             if (backendSettings) {
@@ -229,13 +243,36 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           })
           .catch((err) => console.error('Error fetching users:', err));
-      }
-    });
 
-    _socket = new BackendSocket((snapshot) => {
-      get()._applySnapshot(snapshot);
-    });
-    _socket.connect();
+        if (!_socket) {
+          _socket = new BackendSocket((snapshot) => {
+            get()._applySnapshot(snapshot);
+          });
+        }
+        _socket.connect(res.access_token);
+      })
+      .catch(() => {
+        // Clear invalid local user session
+        setAccessToken(null);
+        set({ currentUser: null, accessToken: null, backendChecked: true });
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('forensys_user');
+        }
+
+        checkBackendAlive().then((alive) => {
+          set({ backendConnected: alive });
+          if (alive) {
+            get().checkSetupStatus();
+          }
+        });
+
+        if (!_socket) {
+          _socket = new BackendSocket((snapshot) => {
+            get()._applySnapshot(snapshot);
+          });
+        }
+        _socket.connect();
+      });
 
     // Keep-alive ping every 10 seconds
     setInterval(() => _socket?.ping(), 10000);
@@ -557,12 +594,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bootstrapAdmin: async (name, email, password) => {
     try {
-      const user = await apiBootstrapAdmin(name, email, password);
-      set({ currentUser: user, setupRequired: false });
+      const res = await apiBootstrapAdmin(name, email, password);
+      setAccessToken(res.access_token);
+      set({ currentUser: res.user, accessToken: res.access_token, setupRequired: false });
       if (typeof window !== 'undefined') {
-        localStorage.setItem('forensys_user', JSON.stringify(user));
+        localStorage.setItem('forensys_user', JSON.stringify(res.user));
       }
-      await get().fetchUsers();
+      if (_socket) {
+        _socket.disconnect();
+        _socket = null;
+      }
+      get().connectBackend();
     } catch (err) {
       console.error('Error bootstrapping admin:', err);
       throw err;
@@ -571,11 +613,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   login: async (email, password) => {
     try {
-      const user = await apiLogin(email, password);
-      set({ currentUser: user });
+      const res = await apiLogin(email, password);
+      setAccessToken(res.access_token);
+      set({ currentUser: res.user, accessToken: res.access_token });
       if (typeof window !== 'undefined') {
-        localStorage.setItem('forensys_user', JSON.stringify(user));
+        localStorage.setItem('forensys_user', JSON.stringify(res.user));
       }
+      if (_socket) {
+        _socket.disconnect();
+        _socket = null;
+      }
+      get().connectBackend();
     } catch (err) {
       console.error('Error logging in:', err);
       throw err;
@@ -583,9 +631,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   logout: () => {
-    set({ currentUser: null });
+    setAccessToken(null);
+    set({ currentUser: null, accessToken: null });
     if (typeof window !== 'undefined') {
       localStorage.removeItem('forensys_user');
+    }
+    logoutSession().catch((err) => console.error('Logout error:', err));
+    if (_socket) {
+      _socket.disconnect();
+      _socket = null;
     }
   },
 

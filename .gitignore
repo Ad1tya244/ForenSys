@@ -142,3 +142,8 @@ __v0_jsx-dev-runtime.ts
 .cache/
 tmp/
 temp/
+
+# ─── ForenSys Backend Flat-Files ─────────────────────────────────────────────
+backend/users.json
+backend/settings.json
+backend/reports.json

@@ -7,6 +7,64 @@
 export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 export const WS_URL = BACKEND_URL.replace('http', 'ws') + '/ws';
 
+// ── Token & Auth Management ──────────────────────────────────────────────────
+
+let accessToken: string | null = null;
+let onAuthErrorCallback: (() => void) | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function registerAuthErrorCallback(callback: () => void) {
+  onAuthErrorCallback = callback;
+}
+
+// Helper wrapper to append Bearer token and handle 401 automatic token refresh
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers || {});
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
+  }
+
+  const mergedOptions = { ...options, headers };
+  let res = await fetch(url, mergedOptions);
+
+  // If unauthorized, attempt to refresh session
+  if (res.status === 401 && !url.includes('/api/auth/login') && !url.includes('/api/auth/setup') && !url.includes('/api/auth/refresh')) {
+    try {
+      const refreshRes = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data && data.access_token) {
+          accessToken = data.access_token;
+          headers.set('Authorization', `Bearer ${accessToken}`);
+          // Retry the request
+          res = await fetch(url, { ...options, headers });
+          return res;
+        }
+      }
+    } catch (e) {
+      console.error('Session refresh failed:', e);
+    }
+
+    // Trigger logout or redirection if refresh failed
+    if (onAuthErrorCallback) {
+      onAuthErrorCallback();
+    }
+  }
+
+  return res;
+}
+
 // ── Types matching the Python backend output ──────────────────────────────────
 
 export interface RealMetrics {
@@ -105,17 +163,17 @@ export interface BackendSnapshot {
 // ── REST helpers ──────────────────────────────────────────────────────────────
 
 export async function fetchHealth(): Promise<{ status: string; clients: number; alerts: number }> {
-  const res = await fetch(`${BACKEND_URL}/api/health`);
+  const res = await authFetch(`${BACKEND_URL}/api/health`);
   return res.json();
 }
 
 export async function fetchAlerts(): Promise<RealAlert[]> {
-  const res = await fetch(`${BACKEND_URL}/api/alerts`);
+  const res = await authFetch(`${BACKEND_URL}/api/alerts`);
   return res.json();
 }
 
 export async function fetchMetrics(): Promise<RealMetrics> {
-  const res = await fetch(`${BACKEND_URL}/api/metrics`);
+  const res = await authFetch(`${BACKEND_URL}/api/metrics`);
   return res.json();
 }
 
@@ -143,12 +201,12 @@ export interface SavedReport {
 }
 
 export async function fetchReports(): Promise<SavedReport[]> {
-  const res = await fetch(`${BACKEND_URL}/api/reports`);
+  const res = await authFetch(`${BACKEND_URL}/api/reports`);
   return res.json();
 }
 
 export async function saveReport(report: SavedReport): Promise<SavedReport> {
-  const res = await fetch(`${BACKEND_URL}/api/reports`, {
+  const res = await authFetch(`${BACKEND_URL}/api/reports`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(report),
@@ -157,12 +215,11 @@ export async function saveReport(report: SavedReport): Promise<SavedReport> {
 }
 
 export async function deleteReport(id: string): Promise<{ status: string }> {
-  const res = await fetch(`${BACKEND_URL}/api/reports/${id}`, {
+  const res = await authFetch(`${BACKEND_URL}/api/reports/${id}`, {
     method: 'DELETE',
   });
   return res.json();
 }
-
 
 // ── Settings REST helpers ─────────────────────────────────────────────────────
 
@@ -184,19 +241,18 @@ export interface AppSettings {
 }
 
 export async function fetchSettings(): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/api/settings`);
+  const res = await authFetch(`${BACKEND_URL}/api/settings`);
   return res.json();
 }
 
 export async function saveSettings(settings: AppSettings): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/api/settings`, {
+  const res = await authFetch(`${BACKEND_URL}/api/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
   });
   return res.json();
 }
-
 
 // ── RBAC REST helpers ─────────────────────────────────────────────────────────
 
@@ -234,12 +290,12 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
 };
 
 export async function fetchUsers(): Promise<RbacUser[]> {
-  const res = await fetch(`${BACKEND_URL}/api/users`);
+  const res = await authFetch(`${BACKEND_URL}/api/users`);
   return res.json();
 }
 
 export async function saveUser(user: RbacUser | Omit<RbacUser, 'id'>): Promise<RbacUser> {
-  const res = await fetch(`${BACKEND_URL}/api/users`, {
+  const res = await authFetch(`${BACKEND_URL}/api/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(user),
@@ -248,7 +304,7 @@ export async function saveUser(user: RbacUser | Omit<RbacUser, 'id'>): Promise<R
 }
 
 export async function deleteUser(id: string): Promise<{ status: string }> {
-  const res = await fetch(`${BACKEND_URL}/api/users/${id}`, {
+  const res = await authFetch(`${BACKEND_URL}/api/users/${id}`, {
     method: 'DELETE',
   });
   return res.json();
@@ -256,16 +312,22 @@ export async function deleteUser(id: string): Promise<{ status: string }> {
 
 // ── Auth REST helpers ─────────────────────────────────────────────────────────
 
+export interface AuthResponse {
+  access_token: string;
+  user: RbacUser;
+}
+
 export async function checkSetupRequired(): Promise<{ setup_required: boolean }> {
   const res = await fetch(`${BACKEND_URL}/api/auth/setup-status`);
   return res.json();
 }
 
-export async function bootstrapAdmin(name: string, email: string, password: string): Promise<RbacUser> {
+export async function bootstrapAdmin(name: string, email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${BACKEND_URL}/api/auth/setup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email, password }),
+    credentials: 'include',
   });
   if (!res.ok) {
     const errorData = await res.json();
@@ -274,11 +336,12 @@ export async function bootstrapAdmin(name: string, email: string, password: stri
   return res.json();
 }
 
-export async function login(email: string, password: string): Promise<RbacUser> {
+export async function login(email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
+    credentials: 'include',
   });
   if (!res.ok) {
     const errorData = await res.json();
@@ -287,8 +350,28 @@ export async function login(email: string, password: string): Promise<RbacUser> 
   return res.json();
 }
 
+export async function refreshSession(): Promise<AuthResponse> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Session expired');
+  }
+  return res.json();
+}
+
+export async function logoutSession(): Promise<{ status: string }> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
 export async function updateProfile(name: string, email: string): Promise<RbacUser> {
-  const res = await fetch(`${BACKEND_URL}/api/auth/update-profile`, {
+  const res = await authFetch(`${BACKEND_URL}/api/auth/update-profile`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email }),
@@ -299,8 +382,6 @@ export async function updateProfile(name: string, email: string): Promise<RbacUs
   }
   return res.json();
 }
-
-
 
 // ── WebSocket manager ─────────────────────────────────────────────────────────
 
@@ -316,10 +397,11 @@ export class BackendSocket {
     this.handler = handler;
   }
 
-  connect(): void {
+  connect(token?: string): void {
     if (this.ws) return;
     try {
-      this.ws = new WebSocket(WS_URL);
+      const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
+      this.ws = new WebSocket(url);
 
       this.ws.onmessage = (event) => {
         try {
@@ -334,7 +416,7 @@ export class BackendSocket {
         this.ws = null;
         if (this.alive) {
           // Reconnect after 3 seconds
-          this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+          this.reconnectTimer = setTimeout(() => this.connect(accessToken || undefined), 3000);
         }
       };
 
@@ -343,7 +425,7 @@ export class BackendSocket {
         this.ws = null;
       };
     } catch {
-      this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+      this.reconnectTimer = setTimeout(() => this.connect(accessToken || undefined), 3000);
     }
   }
 

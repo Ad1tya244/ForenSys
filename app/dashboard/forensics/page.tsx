@@ -288,11 +288,11 @@ ${JSON.stringify(item.payload || {}, null, 2)}
   // Handled inside initial useEffects to preserve execution order
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
+    <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-          <Lock className="w-8 h-8 text-accent" />
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <Lock className="w-6 h-6 text-accent" />
           Forensic Evidence Vault
         </h1>
         <p className="text-muted-foreground">Chain of custody preservation and evidence authentication</p>

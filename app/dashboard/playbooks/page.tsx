@@ -47,11 +47,11 @@ export default function PlaybooksPage() {
   const [activeStage, setActiveStage] = useState(0);
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
+    <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-          <BookOpen className="w-8 h-8 text-accent" />
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <BookOpen className="w-6 h-6 text-accent" />
           Attack Playbooks
         </h1>
         <p className="text-muted-foreground">Automated response workflows for common attack patterns</p>
