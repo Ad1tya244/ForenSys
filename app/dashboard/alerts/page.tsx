@@ -135,19 +135,23 @@ export default function AlertsPage() {
 
       {/* Filters */}
       <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
+        <div className="flex flex-col md:flex-row gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
               placeholder="Search alerts by title, source..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-input border-border/50 text-sm h-9"
+              className="pl-9 pr-10 bg-input border-border/50 text-sm h-9"
             />
           </div>
-          <Button variant="outline" className="border-border/50 h-9 text-xs" size="sm">
-            <Filter className="w-3.5 h-3.5 mr-1.5" /> Advanced Filters
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" className="h-9 text-xs border-border/50 flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5" />
+              <span>Advanced Filters</span>
+            </Button>
+          </div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {['all', 'critical', 'high', 'medium', 'low', 'new', 'acknowledged', 'investigating', 'resolved'].map((f) => {

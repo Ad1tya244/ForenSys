@@ -17,6 +17,7 @@ ForenSys streams real host telemetry and runs local threat analysis to drive all
 - **Security Analytics**: Visualizes Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), asset risk distribution (Radar charts), and alert severity trends.
 - **Network Architecture Map**: Interactive SVG-based network topology mapping that highlights compromised nodes, local interfaces, and traffic pathways.
 - **Log Explorer**: Live streaming log explorer capturing active system log streams with level, process, subsystem, and category filters. Features a dynamic stacked level density distribution bar, regex search mode with real-time error syntax feedback, inline query term highlighting, CSV/JSON exporters, and an expanded drawer with direct Iris analyzer hooks.
+- **Platform-Wide Uniform Search & Filters**: All core modules (Logs, Threat Hunting, Network Intel, Alerts) utilize a perfectly aligned, unified controls row. Features a standardized height (`h-9`/`36px`), relative alignment wrappers, absolute query/regex toggles, and customized form-styled native select dropdowns to deliver a consistent user experience.
 - **Context-Aware AI Security Assistant (Iris)**: A built-in Security Assistant analyzing live SOC state to reconstruct attack chains and answer analysis questions.
 - **SOAR Automation & RBAC**: Automated "If/Then" containment rules and role-based access control permission configurations. Includes password visibility toggles (eye icons) on both Operator Creation and Password Reset panels for secure administration.
 

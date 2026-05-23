@@ -936,47 +936,53 @@ export default function ThreatHuntingPage() {
       <div className="space-y-3">
         {/* Search Console */}
         <div className="space-y-4">
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
+          <div className="flex flex-col md:flex-row gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1">
               <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
                 placeholder="Query syntax: process.name:bash connection.remote_ip:127.0.0.1 log.level:error ..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && executeHunt()}
-                className="pl-9 bg-input border-border/50 text-sm h-10 font-mono text-accent focus:ring-1 focus:ring-accent"
+                className="pl-9 pr-10 bg-input border-border/50 text-sm h-9 font-mono text-accent focus:ring-1 focus:ring-accent"
               />
               {searchQuery && (
                 <button
                   onClick={handleClearAllConditions}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            <Button
-              onClick={() => setShowBuilder(!showBuilder)}
-              variant="outline"
-              className={`border-border/60 h-10 px-3 flex items-center gap-1.5 ${showBuilder ? 'bg-accent/10 border-accent text-accent' : ''}`}
-            >
-              <Sliders className="w-4 h-4" /> Builder
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => setShowBuilder(!showBuilder)}
+                variant="outline"
+                size="sm"
+                className={`h-9 text-xs border-border/60 flex items-center gap-1.5 ${showBuilder ? 'bg-accent/10 border-accent text-accent' : ''}`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Builder</span>
+              </Button>
 
-            <Button
-              onClick={() => executeHunt()}
-              disabled={isHunting}
-              className="bg-accent hover:bg-accent/90 text-accent-foreground h-10 px-6 font-mono font-semibold"
-            >
-              {isHunting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2 fill-current" /> RUN HUNT
-                </>
-              )}
-            </Button>
+              <Button
+                onClick={() => executeHunt()}
+                disabled={isHunting}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground h-9 px-4 text-xs font-mono font-semibold flex items-center gap-1.5"
+              >
+                {isHunting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>RUN HUNT</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Builder Panel Drawer */}

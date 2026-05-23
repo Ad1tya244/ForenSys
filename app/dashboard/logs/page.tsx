@@ -10,13 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, LogEntry } from '@/lib/app-store';
 import { useCopilotStore } from '@/lib/copilot-store';
@@ -353,133 +347,112 @@ export default function LogsPage() {
       )}
 
       {/* Controls & Exporters */}
-      <div className="flex flex-col space-y-3 md:space-y-0 md:flex-row md:items-center md:gap-3">
-        {/* Search */}
-        <div className="flex-1 relative flex items-center">
-          <Search className="w-4 h-4 text-muted-foreground absolute left-3" />
+      <div className="flex flex-col md:flex-row gap-3">
+        {/* Search Input with Regex option */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <Input
             placeholder="Search log messages, process name, subsystem, path..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className={`pl-9 pr-16 bg-input border-border/50 text-sm h-9 font-mono ${regexError ? 'border-red-500/80 focus-visible:ring-red-500' : ''}`}
-            style={{ height: '36px' }}
+            className={`pl-9 pr-10 bg-input border-border/50 text-sm h-9 font-mono ${regexError ? 'border-red-500/80 focus-visible:ring-red-500' : ''}`}
           />
-          <div className="absolute right-1 flex items-center gap-1">
-            {search && (
-              <button onClick={() => setSearch('')} className="p-1 hover:text-foreground text-muted-foreground transition-colors">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              onClick={() => setIsRegex(!isRegex)}
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
-                isRegex 
-                  ? 'bg-accent/20 text-accent border-accent/40' 
-                  : 'bg-transparent text-muted-foreground border-border/40 hover:text-foreground'
-              }`}
-              title="Toggle Regex Match"
-            >
-              .*
-            </button>
-          </div>
+          <button
+            onClick={() => setIsRegex(!isRegex)}
+            className={`absolute right-2.5 top-1/2 -translate-y-1/2 h-5.5 px-1.5 rounded text-[10px] font-mono border transition-all duration-150 ${
+              isRegex
+                ? 'bg-accent/20 text-accent border-accent/50 font-bold'
+                : 'bg-transparent text-muted-foreground border-border/30 hover:border-border/60'
+            }`}
+            title="Toggle Regex Match"
+          >
+            .*
+          </button>
         </div>
 
-        {/* Dropdowns */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <Select value={levelFilter} onValueChange={setLevelFilter}>
-            <SelectTrigger 
-              className="h-9 w-[120px] text-xs border-border/50 bg-input text-foreground font-mono"
-              style={{ height: '36px' }}
-            >
-              <SelectValue placeholder="All Levels" />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
-              <SelectItem value="all">All Levels</SelectItem>
-              <SelectItem value="info">INFO</SelectItem>
-              <SelectItem value="warn">WARN</SelectItem>
-              <SelectItem value="error">ERROR</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Level Filter */}
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent font-mono"
+          >
+            <option value="all">All Levels</option>
+            <option value="info">INFO</option>
+            <option value="warn">WARN</option>
+            <option value="error">ERROR</option>
+          </select>
 
-          <Select value={processFilter} onValueChange={setProcessFilter}>
-            <SelectTrigger 
-              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
-              style={{ height: '36px' }}
-            >
-              <SelectValue placeholder="All Processes" />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
-              <SelectItem value="all">All Processes</SelectItem>
-              {processes.map((proc) => (
-                <SelectItem key={proc} value={proc}>{proc}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Process Filter */}
+          <select
+            value={processFilter}
+            onChange={(e) => setProcessFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent max-w-[150px] font-mono"
+          >
+            <option value="all">All Processes</option>
+            {processes.map((proc) => (
+              <option key={proc} value={proc}>{proc}</option>
+            ))}
+          </select>
 
-          <Select value={subsystemFilter} onValueChange={setSubsystemFilter}>
-            <SelectTrigger 
-              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
-              style={{ height: '36px' }}
-            >
-              <SelectValue placeholder="All Subsystems" />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
-              <SelectItem value="all">All Subsystems</SelectItem>
-              {subsystems.map((sub) => (
-                <SelectItem key={sub} value={sub}>{sub}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Subsystem Filter */}
+          <select
+            value={subsystemFilter}
+            onChange={(e) => setSubsystemFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent max-w-[150px] font-mono"
+          >
+            <option value="all">All Subsystems</option>
+            {subsystems.map((sub) => (
+              <option key={sub} value={sub}>{sub}</option>
+            ))}
+          </select>
 
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger 
-              className="h-9 w-[150px] max-w-40 text-xs border-border/50 bg-input text-foreground font-mono"
-              style={{ height: '36px' }}
-            >
-              <SelectValue placeholder="All Categories" />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border/50 text-xs font-mono text-foreground">
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Category Filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent max-w-[150px] font-mono"
+          >
+            <option value="all">All Categories</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
 
           {/* Tools */}
           <Button
             variant="outline"
-            className="h-9 px-3 text-xs border-border/50 gap-1.5 bg-background/50 hover:bg-accent/10"
+            size="sm"
             onClick={clearFilters}
+            className="h-9 text-xs border-border/50 flex items-center gap-1.5"
             title="Reset Filters"
-            style={{ height: '36px' }}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
 
           <div className="h-6 w-px bg-border/40 mx-1" />
 
-          <Button
-            variant="outline"
-            className="h-9 px-2.5 text-xs border-border/50 gap-1 bg-background/50 hover:bg-accent/10 font-mono"
-            onClick={exportToCSV}
-            title="Download CSV"
-            style={{ height: '36px' }}
-          >
-            <Download className="w-3.5 h-3.5" />
-            CSV
-          </Button>
-
-          <Button
-            variant="outline"
-            className="h-9 px-2.5 text-xs border-border/50 gap-1 bg-background/50 hover:bg-accent/10 font-mono"
-            onClick={exportToJSON}
-            title="Download JSON"
-            style={{ height: '36px' }}
-          >
-            <Download className="w-3.5 h-3.5" />
-            JSON
-          </Button>
+          {/* Export Utilities */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToCSV}
+              className="h-9 text-xs border-border/50 flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToJSON}
+              className="h-9 text-xs border-border/50 flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>JSON</span>
+            </Button>
+          </div>
         </div>
       </div>
 
