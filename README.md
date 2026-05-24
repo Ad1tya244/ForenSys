@@ -21,7 +21,7 @@ ForenSys streams real host telemetry and runs local threat analysis to drive all
 - **Platform-Wide Uniform Search & Filters**: All core modules (Logs, Threat Hunting, Network Intel, Alerts) utilize a perfectly aligned, unified controls row. Features a standardized height (`h-9`/`36px`), relative alignment wrappers, absolute query/regex toggles, and customized form-styled native select dropdowns to deliver a consistent user experience.
 - **Context-Aware AI Security Assistant (Iris)**: A built-in Security Assistant analyzing live SOC state to reconstruct attack chains and answer analysis questions.
 - **SOAR Automation & Containment Rules**: Set up active threat response rules ("If/Then" logic) to contain security incidents and automate platform responses.
-- **JWT Authentication & Granular RBAC**: Secure, token-based user sessions utilizing JSON Web Tokens (JWT) with password verification via bcrypt. Supports custom roles (`Super Admin`, `Admin`, `Analyst`, `Guest`) and department-based permissions to control access across all dashboards and automation workspaces. Includes interactive visibility toggles on login, operator creation, and password reset interfaces.
+- **JWT Authentication & Granular RBAC**: Secure, token-based user sessions utilizing JSON Web Tokens (JWT) with password verification via bcrypt. Supports custom roles (`Admin`, `Analyst`, `Responder`, `Viewer`) and department-based permissions to control access across all dashboards and automation workspaces. Includes interactive visibility toggles on login, operator creation, and password reset interfaces.
 
 
 ---
@@ -70,12 +70,12 @@ Create or modify the `.env` file in the `backend/` directory to configure the da
 ```env
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=root
+MYSQL_USER=your_mysql_user
+MYSQL_PASSWORD=your_mysql_password
 MYSQL_DB=forensys
 
 # Secret key used for signing JWT access and refresh tokens
-JWT_SECRET_KEY=super-secret-key-replace-in-prod-with-32-bytes
+JWT_SECRET_KEY=your_jwt_secret_key
 ```
 
 ### Installation & Launch
