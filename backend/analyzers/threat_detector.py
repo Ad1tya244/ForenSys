@@ -64,6 +64,7 @@ class ThreatDetector:
         self._fired: Set[str] = set()
         # Set of listening ports seen in previous cycle
         self._prev_listeners: Set[int] = set()
+        self._initialized_listeners: bool = False
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -217,6 +218,13 @@ class ThreatDetector:
 
     def _rule_new_listener(self, current_listeners: List[Dict], out: List[Dict]) -> None:
         current_ports = {p["port"] for p in current_listeners}
+        
+        # On the first cycle, baseline the ports currently open without alerting
+        if not self._initialized_listeners:
+            self._prev_listeners = current_ports
+            self._initialized_listeners = True
+            return
+
         new_ports = current_ports - self._prev_listeners
         self._prev_listeners = current_ports
 
