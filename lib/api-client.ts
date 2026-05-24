@@ -148,6 +148,18 @@ export interface ArpDevice {
   interface: string;
 }
 
+export interface RealNetworkPacket {
+  id: string;
+  timestamp: string;
+  protocol: 'TCP' | 'UDP' | 'ICMP';
+  src_ip: string;
+  src_port: number;
+  dst_ip: string;
+  dst_port: number;
+  length: number;
+  info: string;
+}
+
 export interface BackendSnapshot {
   timestamp: string;
   metrics: RealMetrics;
@@ -158,6 +170,7 @@ export interface BackendSnapshot {
   all_alerts: RealAlert[];
   devices: ArpDevice[];
   listening_ports: { port: number; ip: string; process: string; pid: number }[];
+  network_traffic: RealNetworkPacket[];
 }
 
 // ── REST helpers ──────────────────────────────────────────────────────────────
@@ -380,6 +393,49 @@ export async function updateProfile(name: string, email: string): Promise<RbacUs
     const errorData = await res.json();
     throw new Error(errorData.detail || 'Failed to update profile');
   }
+  return res.json();
+}
+
+// ── Automation Rules API helpers ─────────────────────────────────────────────
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description: string;
+  trigger: string;
+  action: string;
+  severity: 'critical' | 'high' | 'medium' | 'any';
+  enabled: boolean;
+  lastFired: string | null;
+  firedCount: number;
+  category: 'containment' | 'notification' | 'enrichment' | 'ticketing';
+}
+
+export async function fetchRules(): Promise<AutomationRule[]> {
+  const res = await authFetch(`${BACKEND_URL}/api/rules`);
+  return res.json();
+}
+
+export async function saveRule(rule: AutomationRule): Promise<AutomationRule> {
+  const res = await authFetch(`${BACKEND_URL}/api/rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rule),
+  });
+  return res.json();
+}
+
+export async function deleteRule(ruleId: string): Promise<{ status: string }> {
+  const res = await authFetch(`${BACKEND_URL}/api/rules/${ruleId}`, {
+    method: 'DELETE',
+  });
+  return res.json();
+}
+
+export async function triggerRule(ruleId: string): Promise<AutomationRule> {
+  const res = await authFetch(`${BACKEND_URL}/api/rules/${ruleId}/trigger`, {
+    method: 'POST',
+  });
   return res.json();
 }
 

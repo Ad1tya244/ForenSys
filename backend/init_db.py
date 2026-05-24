@@ -3,7 +3,7 @@ import pymysql
 from dotenv import load_dotenv
 
 # Load env variables
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 host = os.getenv("MYSQL_HOST", "127.0.0.1")
 port = int(os.getenv("MYSQL_PORT", 3306))

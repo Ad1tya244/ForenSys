@@ -147,3 +147,4 @@ temp/
 backend/users.json
 backend/settings.json
 backend/reports.json
+backend/rules.json

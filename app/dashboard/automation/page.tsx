@@ -12,94 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-
-interface AutomationRule {
-  id: string;
-  name: string;
-  description: string;
-  trigger: string;
-  action: string;
-  severity: 'critical' | 'high' | 'medium' | 'any';
-  enabled: boolean;
-  lastFired: Date | null;
-  firedCount: number;
-  category: 'containment' | 'notification' | 'enrichment' | 'ticketing';
-}
-
-const INITIAL_RULES: AutomationRule[] = [
-  {
-    id: '1',
-    name: 'Auto-Isolate Ransomware Host',
-    description: 'Automatically quarantine endpoints showing ransomware-like behavior',
-    trigger: 'Malware Detection: Ransomware pattern',
-    action: 'Isolate endpoint via EDR API + notify SOC team',
-    severity: 'critical',
-    enabled: true,
-    lastFired: new Date(Date.now() - 86400000 * 2),
-    firedCount: 7,
-    category: 'containment',
-  },
-  {
-    id: '2',
-    name: 'Critical Alert → PagerDuty',
-    description: 'Page on-call analyst for any critical severity alert',
-    trigger: 'Alert severity == CRITICAL',
-    action: 'POST to PagerDuty API → create incident',
-    severity: 'critical',
-    enabled: true,
-    lastFired: new Date(Date.now() - 3600000),
-    firedCount: 43,
-    category: 'notification',
-  },
-  {
-    id: '3',
-    name: 'IP Reputation Enrichment',
-    description: 'Auto-enrich any external IP with VirusTotal + AbuseIPDB',
-    trigger: 'New alert with external IP indicator',
-    action: 'Query threat intel APIs → attach to alert',
-    severity: 'any',
-    enabled: true,
-    lastFired: new Date(Date.now() - 900000),
-    firedCount: 312,
-    category: 'enrichment',
-  },
-  {
-    id: '4',
-    name: 'ServiceNow Ticket Creation',
-    description: 'Create ITSM ticket for high+ incidents requiring change management',
-    trigger: 'Incident severity >= HIGH AND status == open',
-    action: 'Create ServiceNow change request via REST API',
-    severity: 'high',
-    enabled: true,
-    lastFired: new Date(Date.now() - 7200000),
-    firedCount: 19,
-    category: 'ticketing',
-  },
-  {
-    id: '5',
-    name: 'Block C2 IP at Firewall',
-    description: 'Automatically block confirmed C2 IPs at perimeter firewall',
-    trigger: 'C2 IOC confirmed with confidence >= 85%',
-    action: 'Push block rule to Palo Alto via API',
-    severity: 'critical',
-    enabled: false,
-    lastFired: new Date(Date.now() - 86400000 * 5),
-    firedCount: 3,
-    category: 'containment',
-  },
-  {
-    id: '6',
-    name: 'Slack SOC Digest',
-    description: 'Post hourly summary of new alerts to #soc-alerts Slack channel',
-    trigger: 'Scheduled: every 60 minutes',
-    action: 'POST alert summary to Slack webhook',
-    severity: 'any',
-    enabled: true,
-    lastFired: new Date(Date.now() - 1800000),
-    firedCount: 1287,
-    category: 'notification',
-  },
-];
+import { useAppStore, AutomationRule } from '@/lib/app-store';
 
 const CATEGORY_COLORS: Record<string, string> = {
   containment: 'bg-red-900/30 text-red-300 border-red-700/50',
@@ -116,41 +29,65 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 export default function AutomationPage() {
-  const [rules, setRules] = useState<AutomationRule[]>(INITIAL_RULES);
-  const [selectedRule, setSelectedRule] = useState<AutomationRule | null>(null);
+  const rules = useAppStore((state) => state.rules);
+  const fetchRules = useAppStore((state) => state.fetchRules);
+  const saveRule = useAppStore((state) => state.saveRule);
+  const deleteRule = useAppStore((state) => state.deleteRule);
+  const triggerRule = useAppStore((state) => state.triggerRule);
+
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [newRule, setNewRule] = useState({ name: '', description: '', trigger: '', action: '', severity: 'any' as AutomationRule['severity'], category: 'notification' as AutomationRule['category'] });
+  const [newRule, setNewRule] = useState({
+    name: '',
+    description: '',
+    trigger: '',
+    action: '',
+    severity: 'any' as AutomationRule['severity'],
+    category: 'notification' as AutomationRule['category']
+  });
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    fetchRules();
+  }, [fetchRules]);
 
+  const selectedRule = rules.find((r) => r.id === selectedRuleId) || null;
   const filtered = rules.filter((r) => categoryFilter === 'all' || r.category === categoryFilter);
 
-  const toggleRule = (id: string) => {
-    setRules((prev) => prev.map((r) => {
-      if (r.id !== id) return r;
-      const next = { ...r, enabled: !r.enabled };
-      toast.info(`Rule "${r.name}" ${next.enabled ? 'enabled' : 'disabled'}`);
-      return next;
-    }));
-    if (selectedRule?.id === id) setSelectedRule((r) => r ? { ...r, enabled: !r.enabled } : null);
+  const toggleRule = async (id: string) => {
+    const rule = rules.find((r) => r.id === id);
+    if (!rule) return;
+    try {
+      const updated = { ...rule, enabled: !rule.enabled };
+      await saveRule(updated);
+      toast.info(`Rule "${rule.name}" ${updated.enabled ? 'enabled' : 'disabled'}`);
+    } catch (e) {
+      toast.error('Failed to toggle rule');
+    }
   };
 
-  const removeRule = (id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    if (selectedRule?.id === id) setSelectedRule(null);
-    toast.success('Rule deleted');
+  const removeRule = async (id: string) => {
+    try {
+      await deleteRule(id);
+      if (selectedRuleId === id) setSelectedRuleId(null);
+      toast.success('Rule deleted');
+    } catch (e) {
+      toast.error('Failed to delete rule');
+    }
   };
 
-  const triggerRuleManually = (rule: AutomationRule) => {
-    setRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, firedCount: r.firedCount + 1, lastFired: new Date() } : r));
-    toast.success(`Rule triggered: ${rule.name}`, { description: rule.action });
+  const triggerRuleManually = async (rule: AutomationRule) => {
+    try {
+      await triggerRule(rule.id);
+      toast.success(`Rule triggered: ${rule.name}`, { description: rule.action });
+    } catch (e) {
+      toast.error('Failed to trigger rule');
+    }
   };
 
-  const addRule = () => {
+  const addRule = async () => {
     if (!newRule.name || !newRule.trigger || !newRule.action) {
       toast.error('Please fill in required fields');
       return;
@@ -162,10 +99,14 @@ export default function AutomationPage() {
       lastFired: null,
       firedCount: 0,
     };
-    setRules((prev) => [rule, ...prev]);
-    setShowAddModal(false);
-    setNewRule({ name: '', description: '', trigger: '', action: '', severity: 'any', category: 'notification' });
-    toast.success('Automation rule created');
+    try {
+      await saveRule(rule);
+      setShowAddModal(false);
+      setNewRule({ name: '', description: '', trigger: '', action: '', severity: 'any', category: 'notification' });
+      toast.success('Automation rule created');
+    } catch (e) {
+      toast.error('Failed to create automation rule');
+    }
   };
 
   const stats = {
@@ -215,10 +156,10 @@ export default function AutomationPage() {
           <button
             key={cat}
             onClick={() => setCategoryFilter(cat)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all capitalize ${
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.01] active:scale-[0.97] capitalize ${
               categoryFilter === cat
                 ? 'bg-accent/20 text-accent border-accent/50'
-                : 'border-border/50 text-muted-foreground hover:text-foreground'
+                : 'border border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
             }`}
           >
             {cat}
@@ -237,9 +178,9 @@ export default function AutomationPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ delay: i * 0.04 }}
-                onClick={() => setSelectedRule(selectedRule?.id === rule.id ? null : rule)}
+                onClick={() => setSelectedRuleId(selectedRuleId === rule.id ? null : rule.id)}
                 className={`glass rounded-lg p-4 border cursor-pointer transition-all ${
-                  selectedRule?.id === rule.id
+                  selectedRuleId === rule.id
                     ? 'border-accent bg-accent/5'
                     : 'border-border/50 hover:border-border'
                 } ${!rule.enabled ? 'opacity-60' : ''}`}
@@ -265,7 +206,7 @@ export default function AutomationPage() {
                     <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                       <span>Fired: <span className="text-foreground font-mono">{rule.firedCount}×</span></span>
                       {rule.lastFired && (
-                        <span>Last: <span className="text-foreground">{rule.lastFired.toLocaleDateString()}</span></span>
+                        <span>Last: <span className="text-foreground">{new Date(rule.lastFired).toLocaleDateString()}</span></span>
                       )}
                     </div>
                   </div>
@@ -340,7 +281,7 @@ export default function AutomationPage() {
                   <div className="p-2 bg-card/50 rounded border border-border/50">
                     <div className="text-muted-foreground mb-0.5">Last Fired</div>
                     <div className="font-bold text-foreground">
-                      {selectedRule.lastFired ? selectedRule.lastFired.toLocaleDateString() : 'Never'}
+                      {selectedRule.lastFired ? new Date(selectedRule.lastFired).toLocaleDateString() : 'Never'}
                     </div>
                   </div>
                 </div>

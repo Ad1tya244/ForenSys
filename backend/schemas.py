@@ -57,3 +57,16 @@ class SettingsSaveModel(BaseModel):
     mediumThreshold: int = Field(..., ge=0, le=100)
     profile: ProfileModel
     integrations: List[IntegrationModel]
+
+# SOAR Automation Rules
+class RuleSaveModel(BaseModel):
+    id: str
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str
+    trigger: str = Field(..., min_length=1)
+    action: str = Field(..., min_length=1)
+    severity: str = Field(..., pattern="^(critical|high|medium|any)$")
+    enabled: bool
+    lastFired: Optional[str] = None
+    firedCount: int
+    category: str = Field(..., pattern="^(containment|notification|enrichment|ticketing)$")

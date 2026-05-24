@@ -36,11 +36,12 @@ from schemas import (
     UpdateProfileModel,
     UserSaveModel,
     ReportCreateModel,
-    SettingsSaveModel
+    SettingsSaveModel,
+    RuleSaveModel
 )
 
 # Load env variables
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
@@ -108,6 +109,7 @@ from collectors.logs import get_recent_logs
 from collectors.network import get_connections, get_listening_ports, get_arp_devices
 from collectors.processes import get_processes
 from collectors.system import get_system_metrics
+from collectors.traffic import start_traffic_sniffer, get_recent_traffic_packets
 from analyzers.ip_intel import load_blocklist, get_geolocation, is_private_ip, blocklist_size
 from analyzers.threat_detector import ThreatDetector
 
@@ -132,6 +134,103 @@ _latest_snapshot: dict = {}
 _all_alerts: List[dict] = []
 # Cumulative network I/O baseline (for delta calculation)
 _prev_net_io: dict = {}
+
+# SOAR Automation Rules Storage
+RULES_FILE = os.path.join(os.path.dirname(__file__), "rules.json")
+
+DEFAULT_RULES = [
+  {
+    "id": "1",
+    "name": "Auto-Isolate Ransomware Host",
+    "description": "Automatically quarantine endpoints showing ransomware-like behavior",
+    "trigger": "Malware Detection: Ransomware pattern",
+    "action": "Isolate endpoint via EDR API + notify SOC team",
+    "severity": "critical",
+    "enabled": True,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "containment",
+  },
+  {
+    "id": "2",
+    "name": "Critical Alert → PagerDuty",
+    "description": "Page on-call analyst for any critical severity alert",
+    "trigger": "Alert severity == CRITICAL",
+    "action": "POST to PagerDuty API → create incident",
+    "severity": "critical",
+    "enabled": True,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "notification",
+  },
+  {
+    "id": "3",
+    "name": "IP Reputation Enrichment",
+    "description": "Auto-enrich any external IP with VirusTotal + AbuseIPDB",
+    "trigger": "New alert with external IP indicator",
+    "action": "Query threat intel APIs → attach to alert",
+    "severity": "any",
+    "enabled": True,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "enrichment",
+  },
+  {
+    "id": "4",
+    "name": "ServiceNow Ticket Creation",
+    "description": "Create ITSM ticket for high+ incidents requiring change management",
+    "trigger": "Incident severity >= HIGH AND status == open",
+    "action": "Create ServiceNow change request via REST API",
+    "severity": "high",
+    "enabled": True,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "ticketing",
+  },
+  {
+    "id": "5",
+    "name": "Block C2 IP at Firewall",
+    "description": "Automatically block confirmed C2 IPs at perimeter firewall",
+    "trigger": "C2 IOC confirmed with confidence >= 85%",
+    "action": "Push block rule to Palo Alto via API",
+    "severity": "critical",
+    "enabled": False,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "containment",
+  },
+  {
+    "id": "6",
+    "name": "Slack SOC Digest",
+    "description": "Post hourly summary of new alerts to #soc-alerts Slack channel",
+    "trigger": "Scheduled: every 60 minutes",
+    "action": "POST alert summary to Slack webhook",
+    "severity": "any",
+    "enabled": True,
+    "lastFired": None,
+    "firedCount": 0,
+    "category": "notification",
+  }
+]
+
+def load_rules() -> List[dict]:
+    if not os.path.exists(RULES_FILE):
+        return DEFAULT_RULES
+    try:
+        with open(RULES_FILE, "r") as f:
+            data = json.load(f)
+            # Ensure timestamps are loaded as strings
+            return data
+    except Exception as e:
+        print(f"Error loading rules: {e}")
+        return DEFAULT_RULES
+
+def save_rules(rules: List[dict]) -> None:
+    try:
+        with open(RULES_FILE, "w") as f:
+            json.dump(rules, f, indent=2)
+    except Exception as e:
+        print(f"Error saving rules: {e}")
 
 
 # ── Background collection loop ────────────────────────────────────────────────
@@ -170,6 +269,48 @@ async def collect_loop() -> None:
 
             # 3. Run threat detection
             new_alerts = detector.analyze(connections, processes, logs, listening)
+            
+            # Check automation rules on new alerts
+            if new_alerts:
+                try:
+                    rules = load_rules()
+                    rules_changed = False
+                    for alert in new_alerts:
+                        for rule in rules:
+                            if not rule.get("enabled", True):
+                                continue
+                            
+                            # Matches by severity
+                            sev = rule.get("severity", "any")
+                            severity_match = (sev == "any") or (sev == alert.get("severity"))
+                            
+                            # Heuristic matching by trigger description & alert details
+                            trigger_lower = rule.get("trigger", "").lower()
+                            title_lower = alert.get("title", "").lower()
+                            desc_lower = alert.get("description", "").lower()
+                            
+                            trigger_match = False
+                            if "ransomware" in trigger_lower and "ransomware" in title_lower:
+                                trigger_match = True
+                            elif "c2" in trigger_lower and ("c2" in title_lower or "c2" in desc_lower or "blocklist" in title_lower):
+                                trigger_match = True
+                            elif "severity == critical" in trigger_lower and alert.get("severity") == "critical":
+                                trigger_match = True
+                            elif "external ip" in trigger_lower and any(not is_private_ip(asset) for asset in alert.get("affectedAssets", [])):
+                                trigger_match = True
+                            elif rule.get("severity") == alert.get("severity") and rule.get("severity") != "any":
+                                trigger_match = True
+                            
+                            if severity_match and trigger_match:
+                                rule["firedCount"] = rule.get("firedCount", 0) + 1
+                                rule["lastFired"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                                rules_changed = True
+                                print(f"[SOAR Rule Fired] Rule '{rule.get('name')}' triggered by alert '{alert.get('title')}'")
+                    if rules_changed:
+                        save_rules(rules)
+                except Exception as ex:
+                    print(f"Error executing SOAR automation rules: {ex}")
+
             _all_alerts.extend(new_alerts)
             # Keep last 200 alerts
             if len(_all_alerts) > 200:
@@ -195,6 +336,7 @@ async def collect_loop() -> None:
                 "all_alerts": _all_alerts[-100:],   # send last 100
                 "devices": devices,
                 "listening_ports": listening,
+                "network_traffic": get_recent_traffic_packets(),
             }
 
             _latest_snapshot = snapshot
@@ -237,6 +379,8 @@ async def startup() -> None:
     # Load blocklist in background thread (don't block startup)
     t = threading.Thread(target=load_blocklist, daemon=True)
     t.start()
+    # Start traffic sniffer background thread
+    start_traffic_sniffer()
     # Start collection loop
     asyncio.create_task(collect_loop())
     print("[ForenSys] Backend started — collecting real data on port 8000")
@@ -771,6 +915,52 @@ def api_update_profile(data: UpdateProfileModel, current_user: dict = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@app.get("/api/rules")
+def api_get_rules(current_user: dict = Depends(get_current_user)):
+    return load_rules()
+
+
+@app.post("/api/rules")
+def api_save_rule(rule: RuleSaveModel, current_user: dict = Depends(get_current_user)):
+    if "manage_playbooks" not in current_user["permissions"] and current_user["role"] != "admin":
+         raise HTTPException(status_code=403, detail="Not authorized to configure automation rules")
+    
+    rules = load_rules()
+    rule_dict = rule.model_dump()
+    
+    existing_idx = next((i for i, r in enumerate(rules) if r["id"] == rule_dict["id"]), -1)
+    if existing_idx >= 0:
+        rules[existing_idx] = rule_dict
+    else:
+        rules.insert(0, rule_dict)
+        
+    save_rules(rules)
+    return rule_dict
+
+
+@app.delete("/api/rules/{rule_id}")
+def api_delete_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+    if "manage_playbooks" not in current_user["permissions"] and current_user["role"] != "admin":
+         raise HTTPException(status_code=403, detail="Not authorized to configure automation rules")
+         
+    rules = load_rules()
+    rules = [r for r in rules if r["id"] != rule_id]
+    save_rules(rules)
+    return {"status": "success"}
+
+
+@app.post("/api/rules/{rule_id}/trigger")
+def api_trigger_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+    rules = load_rules()
+    for r in rules:
+        if r["id"] == rule_id:
+            r["firedCount"] = r.get("firedCount", 0) + 1
+            r["lastFired"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            save_rules(rules)
+            return r
+    raise HTTPException(status_code=404, detail="Rule not found")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

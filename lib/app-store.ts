@@ -30,10 +30,16 @@ import {
   registerAuthErrorCallback,
   refreshSession,
   logoutSession,
+  AutomationRule,
+  fetchRules,
+  saveRule as apiSaveRule,
+  deleteRule as apiDeleteRule,
+  triggerRule as apiTriggerRule,
+  RealNetworkPacket,
 } from './api-client';
 
 // ── Re-export types so pages don't need to change their imports ──────────────
-export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics, RbacUser };
+export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics, RbacUser, AutomationRule, RealNetworkPacket };
 
 // Kept for compatibility with escalation flow
 export interface Incident {
@@ -106,6 +112,7 @@ interface AppState {
   logs: RealLogEntry[];
   devices: ArpDevice[];
   listeningPorts: { port: number; ip: string; process: string; pid: number }[];
+  networkTrafficLogs: RealNetworkPacket[];
 
   // App state
   notifications: AppNotification[];
@@ -146,6 +153,13 @@ interface AppState {
   saveUser: (user: RbacUser | Omit<RbacUser, 'id'>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
 
+  // Automation Rules
+  rules: AutomationRule[];
+  fetchRules: () => Promise<void>;
+  saveRule: (rule: AutomationRule) => Promise<void>;
+  deleteRule: (id: string) => Promise<void>;
+  triggerRule: (id: string) => Promise<void>;
+
   // Internal
   _applySnapshot: (snapshot: BackendSnapshot) => void;
 }
@@ -163,6 +177,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   incidents: [],
   evidenceItems: [],
   users: [],
+  rules: [],
   metrics: null,
   metricsHistory: [],
   connections: [],
@@ -170,6 +185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   logs: [],
   devices: [],
   listeningPorts: [],
+  networkTrafficLogs: [],
   notifications: [],
 
   currentUser: null,
@@ -243,6 +259,14 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           })
           .catch((err) => console.error('Error fetching users:', err));
+
+        fetchRules()
+          .then((rules) => {
+            if (rules) {
+              set({ rules });
+            }
+          })
+          .catch((err) => console.error('Error fetching rules:', err));
 
         if (!_socket) {
           _socket = new BackendSocket((snapshot) => {
@@ -322,6 +346,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? [...state.metricsHistory, newMetricsPoint].slice(-30)
       : state.metricsHistory;
 
+    const nextTrafficLogs = snapshot.network_traffic && snapshot.network_traffic.length > 0
+      ? [...state.networkTrafficLogs, ...snapshot.network_traffic].slice(-150)
+      : state.networkTrafficLogs;
+
     // Detect connection transition from offline to online
     if (!state.backendConnected) {
       get().checkSetupStatus();
@@ -333,6 +361,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
         .catch((err) => console.warn('Deferred settings fetch failed:', err));
       get().fetchUsers();
+      get().fetchRules();
     }
 
     set({
@@ -346,6 +375,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       logs: snapshot.logs,
       devices: snapshot.devices,
       listeningPorts: snapshot.listening_ports,
+      networkTrafficLogs: nextTrafficLogs,
       notifications: [...newNotifs, ...state.notifications].slice(0, 30),
     });
   },
@@ -690,6 +720,45 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchUsers();
     } catch (err) {
       console.error('Error deleting user:', err);
+      throw err;
+    }
+  },
+
+  fetchRules: async () => {
+    try {
+      const rules = await fetchRules();
+      set({ rules });
+    } catch (err) {
+      console.error('Error fetching rules:', err);
+    }
+  },
+
+  saveRule: async (rule) => {
+    try {
+      await apiSaveRule(rule);
+      await get().fetchRules();
+    } catch (err) {
+      console.error('Error saving rule:', err);
+      throw err;
+    }
+  },
+
+  deleteRule: async (id) => {
+    try {
+      await apiDeleteRule(id);
+      await get().fetchRules();
+    } catch (err) {
+      console.error('Error deleting rule:', err);
+      throw err;
+    }
+  },
+
+  triggerRule: async (id) => {
+    try {
+      await apiTriggerRule(id);
+      await get().fetchRules();
+    } catch (err) {
+      console.error('Error triggering rule:', err);
       throw err;
     }
   },

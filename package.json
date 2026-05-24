@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/start-dev.js",
+    "dev:privileged": "node scripts/start-dev.js --privileged",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."

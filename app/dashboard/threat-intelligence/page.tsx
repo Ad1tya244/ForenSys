@@ -15,13 +15,17 @@ import {
   FileDown,
   Brain,
   HelpCircle,
-  Activity
+  Activity,
+  Play,
+  Pause,
+  Trash2,
+  X
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAppStore } from '@/lib/app-store';
+import { useAppStore, RealNetworkPacket } from '@/lib/app-store';
 import { useCopilotStore } from '@/lib/copilot-store';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -79,7 +83,7 @@ interface IntelItem {
 }
 
 export default function NetworkIntelligencePage() {
-  const { alerts: rawAlerts, metrics, connections } = useAppStore();
+  const { alerts: rawAlerts, metrics, connections, networkTrafficLogs } = useAppStore();
   const alerts = rawAlerts.filter((a) => a.status !== 'resolved');
   const copilotStore = useCopilotStore();
 
@@ -92,7 +96,34 @@ export default function NetworkIntelligencePage() {
   const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
   const [copiedIoc, setCopiedIoc] = useState<string | null>(null);
+  const [displayedTrafficLogs, setDisplayedTrafficLogs] = useState<RealNetworkPacket[]>([]);
+  const [isLive, setIsLive] = useState(true);
+  const [trafficSearch, setTrafficSearch] = useState('');
+  const [protocolFilter, setProtocolFilter] = useState<'all' | 'TCP' | 'UDP' | 'ICMP'>('all');
 
+  useEffect(() => {
+    if (isLive) {
+      setDisplayedTrafficLogs(networkTrafficLogs || []);
+    }
+  }, [networkTrafficLogs, isLive]);
+
+  const filteredTraffic = useMemo(() => {
+    return displayedTrafficLogs.filter((pkt) => {
+      if (protocolFilter !== 'all' && pkt.protocol !== protocolFilter) return false;
+      if (trafficSearch) {
+        const query = trafficSearch.toLowerCase();
+        return (
+          pkt.src_ip.toLowerCase().includes(query) ||
+          pkt.dst_ip.toLowerCase().includes(query) ||
+          pkt.src_port.toString().includes(query) ||
+          pkt.dst_port.toString().includes(query) ||
+          pkt.info.toLowerCase().includes(query) ||
+          pkt.protocol.toLowerCase().includes(query)
+        );
+      }
+      return true;
+    });
+  }, [displayedTrafficLogs, protocolFilter, trafficSearch]);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -253,6 +284,32 @@ export default function NetworkIntelligencePage() {
     ].filter(item => item.value > 0);
   }, [counts]);
 
+  const trafficIpChartData = useMemo(() => {
+    const dict: Record<string, number> = {};
+    displayedTrafficLogs.forEach(pkt => {
+      dict[pkt.src_ip] = (dict[pkt.src_ip] || 0) + 1;
+      dict[pkt.dst_ip] = (dict[pkt.dst_ip] || 0) + 1;
+    });
+    return Object.entries(dict)
+      .map(([ip, count]) => ({ ip, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [displayedTrafficLogs]);
+
+  const trafficProtocolChartData = useMemo(() => {
+    const counts = { TCP: 0, UDP: 0, ICMP: 0 };
+    displayedTrafficLogs.forEach(pkt => {
+      if (pkt.protocol === 'TCP') counts.TCP++;
+      else if (pkt.protocol === 'UDP') counts.UDP++;
+      else if (pkt.protocol === 'ICMP') counts.ICMP++;
+    });
+    return [
+      { name: 'TCP', value: counts.TCP, color: '#3b82f6' },
+      { name: 'UDP', value: counts.UDP, color: '#10b981' },
+      { name: 'ICMP', value: counts.ICMP, color: '#f59e0b' },
+    ].filter(item => item.value > 0);
+  }, [displayedTrafficLogs]);
+
   // Watchlist Star Trigger
   const toggleWatchlist = (id: string, title: string) => {
     setWatchlist((prev) => {
@@ -391,7 +448,307 @@ export default function NetworkIntelligencePage() {
         </div>
       </div>
 
-      {/* Visual Analytics Charts Section */}
+      {/* Real-Time Traffic Analytics Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Top Active Talkers Chart */}
+        <div className="glass rounded-lg p-4 border border-border/50 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Globe className="w-4 h-4 text-cyan-400" />
+              Active Talkers (Live Packet Volume)
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-4">
+              Busiest source & destination IP nodes in current traffic stream
+            </p>
+          </div>
+
+          <div className="h-[180px] w-full">
+            {trafficIpChartData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                No active traffic data to analyze.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trafficIpChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                  <XAxis type="number" stroke="#555" style={{ fontSize: '10px' }} />
+                  <YAxis dataKey="ip" type="category" stroke="#888" style={{ fontSize: '10px' }} width={100} />
+                  <Tooltip
+                    contentStyle={CustomTooltipStyle}
+                    itemStyle={{ color: '#e2e8f0' }}
+                    labelStyle={{ color: '#e2e8f0' }}
+                  />
+                  <Bar dataKey="count" name="Packets Count" fill="#06b6d4" radius={[0, 4, 4, 0]}>
+                    {trafficIpChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fillOpacity={0.8 - index * 0.12} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Live Protocol Distribution Chart */}
+        <div className="glass rounded-lg p-4 border border-border/50 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-accent" />
+              Protocol Volume Distribution
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-4">
+              Live volume breakdown by transport protocol
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 h-[180px]">
+            <div className="w-full sm:w-[50%] h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={trafficProtocolChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={65}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {trafficProtocolChartData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.color}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={CustomTooltipStyle}
+                    itemStyle={{ color: '#e2e8f0' }}
+                    labelStyle={{ color: '#e2e8f0' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 w-full space-y-2">
+              {trafficProtocolChartData.map((item) => (
+                <div key={item.name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{
+                        background: item.color
+                      }}
+                    />
+                    <span className="text-muted-foreground font-medium">{item.name}</span>
+                  </div>
+                  <span className="font-mono text-foreground font-semibold">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Real-Time Network Traffic Audit */}
+      <div className="glass rounded-lg border border-border/50 overflow-hidden space-y-4 p-4">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/30 pb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Activity className={`w-4 h-4 text-accent ${isLive ? 'animate-pulse' : ''}`} />
+              Real-Time Network Traffic Audit
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Live packet capture stream from interface telemetry and established sockets
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Live Indicator Badge */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-colors ${
+              isLive 
+                ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-green-400 animate-ping' : 'bg-yellow-400'}`} />
+              {isLive ? 'LIVE' : 'PAUSED'}
+            </div>
+
+            {/* Play/Pause Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsLive(!isLive)}
+              className="h-8 text-xs border-border/50 flex items-center gap-1"
+            >
+              {isLive ? (
+                <>
+                  <Pause className="w-3 h-3 text-yellow-400" />
+                  <span>Pause</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3 h-3 text-green-400" />
+                  <span>Resume</span>
+                </>
+              )}
+            </Button>
+
+            {/* Clear Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                useAppStore.setState({ networkTrafficLogs: [] });
+                setDisplayedTrafficLogs([]);
+                toast.info('Traffic console cleared');
+              }}
+              className="h-8 text-xs border-border/50 flex items-center gap-1 text-red-400 hover:text-red-300 hover:bg-red-950/20"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Clear</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Filter Controls Row */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          {/* Traffic Search Input */}
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <Input
+              placeholder="Filter by IP, Port, Protocol, or Info..."
+              value={trafficSearch}
+              onChange={(e) => setTrafficSearch(e.target.value)}
+              className="pl-8 pr-8 bg-input border-border/50 text-xs h-8"
+            />
+            {trafficSearch && (
+              <button
+                onClick={() => setTrafficSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Protocol Filter */}
+          <select
+            value={protocolFilter}
+            onChange={(e) => setProtocolFilter(e.target.value as any)}
+            className="h-8 px-2.5 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent min-w-[120px]"
+          >
+            <option value="all">All Protocols</option>
+            <option value="TCP">TCP</option>
+            <option value="UDP">UDP</option>
+            <option value="ICMP">ICMP</option>
+          </select>
+        </div>
+
+        {/* Terminal Logger Table */}
+        <div className="border border-border/50 rounded-md overflow-hidden bg-black/40">
+          <div className="overflow-x-auto">
+            <div className="min-w-[900px]">
+              {/* Header */}
+              <div className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2 border-b border-border/50 text-[10px] text-muted-foreground font-semibold font-mono uppercase bg-card/60">
+                <div>Timestamp (UTC)</div>
+                <div>Proto</div>
+                <div>Source (IP:Port)</div>
+                <div className="text-center">Dir</div>
+                <div>Destination (IP:Port)</div>
+                <div className="text-right">Length (Bytes)</div>
+                <div className="pl-2">Packet Summary / Flags</div>
+              </div>
+
+              {/* Console Rows */}
+              <ScrollArea className="h-[480px]">
+                <div className="divide-y divide-border/20 font-mono text-xs">
+                  {filteredTraffic.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <Activity className="w-8 h-8 text-muted-foreground/40 mb-2 animate-pulse" />
+                      <p className="text-xs font-semibold text-muted-foreground">No packets captured</p>
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                        Waiting for active network connections to transmit...
+                      </p>
+                    </div>
+                  ) : (
+                    [...filteredTraffic].reverse().map((pkt) => {
+                      const protoColor = 
+                        pkt.protocol === 'TCP' 
+                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
+                          : pkt.protocol === 'UDP' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+
+                      return (
+                        <div
+                          key={pkt.id}
+                          className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2.5 items-center hover:bg-white/[0.02] transition-colors"
+                        >
+                          {/* Timestamp */}
+                          <div className="text-muted-foreground text-[11px]">
+                            {new Date(pkt.timestamp).toLocaleTimeString('en', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                              fractionalSecondDigits: 3,
+                              hour12: false
+                            })}
+                          </div>
+
+                          {/* Protocol */}
+                          <div>
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border ${protoColor}`}>
+                              {pkt.protocol}
+                            </span>
+                          </div>
+
+                          {/* Source Socket */}
+                          <div className="truncate text-foreground/90 font-medium">
+                            {pkt.src_ip}
+                            <span className="text-muted-foreground/60">:{pkt.src_port}</span>
+                          </div>
+
+                          {/* Direction Arrow */}
+                          <div className="text-center text-muted-foreground/60">→</div>
+
+                          {/* Destination Socket */}
+                          <div className="truncate text-foreground/90 font-medium">
+                            {pkt.dst_ip}
+                            <span className="text-muted-foreground/60">:{pkt.dst_port}</span>
+                          </div>
+
+                          {/* Length */}
+                          <div className="text-right text-muted-foreground font-mono text-[11px]">
+                            {pkt.length.toLocaleString()} B
+                          </div>
+
+                          {/* Details */}
+                          <div className="pl-2 truncate text-muted-foreground hover:text-foreground transition-colors" title={pkt.info}>
+                            {pkt.info}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+        </div>
+
+        {/* Counter */}
+        <div className="text-[10px] text-muted-foreground font-mono flex items-center justify-between">
+          <div>
+            Buffered: <span className="text-foreground font-semibold">{displayedTrafficLogs.length}/150</span> packets
+          </div>
+          <div>
+            Showing: <span className="text-accent font-semibold">{filteredTraffic.length}</span> filtered packets
+          </div>
+        </div>
+      </div>
+
+      {/* Visual Analytics Charts Section (Moved for Threat Intel) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Geographic Threat Density Chart */}
         <div className="glass rounded-lg p-4 border border-border/50 flex flex-col justify-between">
@@ -609,6 +966,18 @@ export default function NetworkIntelligencePage() {
 
       {/* Intelligence Feed Section */}
       <div className="glass rounded-lg border border-border/50 overflow-hidden">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/30 pb-3 px-4 pt-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Shield className="w-4 h-4 text-accent" />
+              Active Network Signals & Threat Feed
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Correlated threat signals, active established connections, and indicators of compromise
+            </p>
+          </div>
+        </div>
         {/* Table Header */}
         <div className="grid grid-cols-[30px_1fr_120px_100px_120px_150px_30px] gap-4 px-4 py-2.5 border-b border-border/50 text-xs text-muted-foreground font-medium bg-card/50">
           <div className="flex justify-center"></div>
@@ -620,7 +989,7 @@ export default function NetworkIntelligencePage() {
           <div className="flex justify-end"></div>
         </div>
 
-        <ScrollArea className="h-[calc(100vh-480px)] min-h-80">
+        <ScrollArea className="h-64">
           <div className="divide-y divide-border/30">
             <AnimatePresence>
               {filtered.length === 0 ? (

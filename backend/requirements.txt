@@ -9,3 +9,4 @@ pyjwt==2.13.0
 bcrypt==5.0.0
 email-validator==2.3.0
 dnspython==2.8.0
+scapy==2.6.1

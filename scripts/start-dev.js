@@ -4,6 +4,8 @@ const fs = require('fs');
 
 const CWD = process.cwd();
 
+const isPrivileged = process.argv.includes('--privileged') || process.argv.includes('-p');
+
 // Find python executable in .venv
 let pythonPath = path.join(CWD, 'backend', '.venv', 'bin', 'python');
 if (!fs.existsSync(pythonPath)) {
@@ -11,12 +13,21 @@ if (!fs.existsSync(pythonPath)) {
   pythonPath = 'python3';
 }
 
-console.log(`[ForenSys Launcher] Starting backend using python: ${pythonPath}`);
+console.log(`[ForenSys Launcher] Starting backend using python: ${pythonPath}${isPrivileged ? ' (under sudo/privileged mode)' : ''}`);
+if (isPrivileged) {
+  console.log('\x1b[33m%s\x1b[0m', '⚠️  [ForenSys Launcher] Privileged mode requested. Please enter your administrator password below if prompted:');
+}
 
 // Start Python Backend
-const backend = spawn(pythonPath, [path.join(CWD, 'backend', 'main.py')], {
+const backendCmd = isPrivileged ? 'sudo' : pythonPath;
+const backendArgs = isPrivileged 
+  ? [pythonPath, path.join(CWD, 'backend', 'main.py')] 
+  : [path.join(CWD, 'backend', 'main.py')];
+
+const backend = spawn(backendCmd, backendArgs, {
   stdio: 'inherit',
   env: process.env,
+  cwd: path.join(CWD, 'backend'),
 });
 
 backend.on('error', (err) => {
