@@ -46,6 +46,7 @@ def get_recent_logs(minutes: int = 5) -> List[Dict]:
 
 def _macos_logs(minutes: int) -> List[Dict]:
     predicate = (
+        "("
         "(eventMessage CONTAINS[c] 'fail') OR "
         "(eventMessage CONTAINS[c] 'denied') OR "
         "(eventMessage CONTAINS[c] 'invalid') OR "
@@ -56,6 +57,13 @@ def _macos_logs(minutes: int) -> List[Dict]:
         "(process == 'sudo') OR "
         "(process == 'socketfilterfw') OR "
         "(process == 'configd')"
+        ") AND NOT ("
+        "subsystem CONTAINS 'com.apple.FileProvider' OR "
+        "subsystem CONTAINS 'com.apple.CloudDocs' OR "
+        "process CONTAINS 'CloudDocs' OR "
+        "process CONTAINS 'cloudd' OR "
+        "process CONTAINS 'bird'"
+        ")"
     )
     try:
         # Request both info and debug logs so we don't only get default/error levels
@@ -70,11 +78,18 @@ def _macos_logs(minutes: int) -> List[Dict]:
 
         raw = json.loads(result.stdout)
         entries: List[Dict] = []
-        for i, item in enumerate(raw[:100]):
+        for i, item in enumerate(raw):
             msg = item.get("eventMessage", "")
             proc_path = item.get("processImagePath", "")
             proc_name = proc_path.split("/")[-1] if proc_path else item.get("process", "system")
             msg_type = item.get("messageType", "Default")
+            subsystem = item.get("subsystem", "")
+
+            # Exclude noisy, non-security related macOS logs (e.g. iCloud, FileProvider sync warnings)
+            if "com.apple.FileProvider" in subsystem or "com.apple.CloudDocs" in subsystem:
+                continue
+            if "CloudDocs" in proc_name or "cloudd" in proc_name or "bird" in proc_name:
+                continue
             
             trace_id = item.get("traceID", 0)
             timestamp = item.get("timestamp", "")
@@ -86,13 +101,15 @@ def _macos_logs(minutes: int) -> List[Dict]:
                     "timestamp": timestamp,
                     "process": proc_name,
                     "pid": item.get("processID", 0),
-                    "subsystem": item.get("subsystem", ""),
+                    "subsystem": subsystem,
                     "message": msg,
                     "category": item.get("category", "system"),
                     "level": _classify_level(msg_type, msg),
                     "source": "macOS System Log",
                 }
             )
+            if len(entries) >= 100:
+                break
         return entries
 
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError, Exception):

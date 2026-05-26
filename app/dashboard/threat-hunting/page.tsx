@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Target,
   Search,
@@ -10,6 +10,7 @@ import {
   XCircle,
   Terminal,
   Plus,
+  RefreshCw,
   Trash2,
   Download,
   ShieldAlert,
@@ -455,6 +456,31 @@ export default function ThreatHuntingPage() {
   const [selectedTactic, setSelectedTactic] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<{ id: string; type: string; label: string; risk: string; data: any } | null>(null);
 
+  // ── Pan-only state ───────────────────────────────────────────────
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    dragStart.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
+    setIsDragging(true);
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isDragging) return;
+    const { mouseX, mouseY, panX, panY } = dragStart.current;
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Convert screen pixel delta to viewBox units (700×400)
+    const dx = ((e.clientX - mouseX) / rect.width)  * 700;
+    const dy = ((e.clientY - mouseY) / rect.height) * 400;
+    setPan({ x: panX + dx, y: panY + dy });
+  }, [isDragging]);
+
+  const handleMouseUp    = useCallback(() => setIsDragging(false), []);
+  const handleMouseLeave = useCallback(() => setIsDragging(false), []);
+  const handleResetPan   = useCallback(() => setPan({ x: 0, y: 0 }), []);
+
   // Query Builder UI States
   const [showBuilder, setShowBuilder] = useState(false);
   const [qbChannel, setQbChannel] = useState<'process' | 'connection' | 'log' | 'port'>('process');
@@ -868,7 +894,7 @@ export default function ThreatHuntingPage() {
 
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5 bg-background cyber-grid relative">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-950/5 to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-transparent via-cyan-950/5 to-transparent pointer-events-none" />
 
       {/* Header Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
@@ -1353,10 +1379,10 @@ export default function ThreatHuntingPage() {
                 <TabsTrigger value="connections" className="text-xs h-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground font-mono">
                   Sockets ({activeConnections.length})
                 </TabsTrigger>
-                <TabsTrigger value="logs" className="text-xs h-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground font-mono font-sans">
+                <TabsTrigger value="logs" className="text-xs h-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground font-mono">
                   Syslogs ({activeLogs.length})
                 </TabsTrigger>
-                <TabsTrigger value="ports" className="text-xs h-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground font-mono font-sans">
+                <TabsTrigger value="ports" className="text-xs h-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground font-mono">
                   Ports ({activePorts.length})
                 </TabsTrigger>
               </TabsList>
@@ -1401,113 +1427,139 @@ export default function ThreatHuntingPage() {
                     </p>
                   </div>
                 ) : (
-                  <svg className="w-full h-[400px] select-none" viewBox="0 0 700 400">
+                  <svg
+                    className={`w-full h-[400px] select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    viewBox="0 0 700 400"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     <defs>
                       <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                         <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563" />
                       </marker>
                     </defs>
 
-                    {/* SVG Connections Lines */}
-                    {graphData.links.map((link, idx) => {
-                      const sourceNode = graphData.nodes.find(n => n.id === link.source);
-                      const targetNode = graphData.nodes.find(n => n.id === link.target);
-                      if (!sourceNode || !targetNode) return null;
+                    {/* Pan-only group: translate content so drag feels 1:1 with cursor */}
+                    <g transform={`translate(${pan.x}, ${pan.y})`}>
+                      {/* SVG Connections Lines */}
+                      {graphData.links.map((link, idx) => {
+                        const sourceNode = graphData.nodes.find(n => n.id === link.source);
+                        const targetNode = graphData.nodes.find(n => n.id === link.target);
+                        if (!sourceNode || !targetNode) return null;
 
-                      return (
-                        <g key={`link-${idx}`}>
-                          {/* Main line path */}
-                          <line
-                            x1={sourceNode.x}
-                            y1={sourceNode.y}
-                            x2={targetNode.x}
-                            y2={targetNode.y}
-                            stroke={link.color}
-                            strokeWidth={link.animated ? 1.5 : 1}
-                            strokeDasharray={link.type.includes('log') ? '4 4' : 'none'}
-                            className="opacity-60"
-                          />
-                          {/* Flow animation dots along line */}
-                          {link.animated && (
-                            <circle r="2.5" fill={link.color}>
-                              <animateMotion
-                                dur={link.color === '#ef4444' ? '1.8s' : '3.5s'}
-                                repeatCount="indefinite"
-                                path={`M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`}
-                              />
-                            </circle>
-                          )}
-                        </g>
-                      );
-                    })}
-
-                    {/* Nodes drawing */}
-                    {graphData.nodes.map((node) => {
-                      const isSelected = selectedNode?.id === node.id;
-                      const size = node.type === 'host' ? 24 : node.type === 'process' ? 14 : 12;
-
-                      let nodeColor = 'bg-cyan-500';
-                      if (node.type === 'host') nodeColor = 'bg-cyan-400';
-                      else if (node.type === 'connection') nodeColor = 'bg-indigo-500';
-                      else if (node.type === 'log') nodeColor = 'bg-emerald-500';
-                      else if (node.type === 'port') nodeColor = 'bg-purple-500';
-
-                      let riskOutline = 'stroke-border/40';
-                      if (node.risk === 'critical') riskOutline = 'stroke-red-500 animate-pulse';
-                      else if (node.risk === 'high') riskOutline = 'stroke-orange-500 animate-pulse';
-                      else if (node.risk === 'medium') riskOutline = 'stroke-yellow-500';
-
-                      return (
-                        <g
-                          key={node.id}
-                          transform={`translate(${node.x}, ${node.y})`}
-                          onClick={() => setSelectedNode(node)}
-                          className="cursor-pointer"
-                        >
-                          {/* Pulsing ring indicator for matches */}
-                          {node.risk !== 'low' && (
-                            <circle
-                              r={size + 6}
-                              className={`fill-none stroke-2 opacity-55 ${riskOutline}`}
+                        return (
+                          <g key={`link-${idx}`}>
+                            {/* Main line path */}
+                            <line
+                              x1={sourceNode.x}
+                              y1={sourceNode.y}
+                              x2={targetNode.x}
+                              y2={targetNode.y}
+                              stroke={link.color}
+                              strokeWidth={link.animated ? 1.5 : 1}
+                              strokeDasharray={link.type.includes('log') ? '4 4' : 'none'}
+                              className="opacity-60"
                             />
-                          )}
+                            {/* Flow animation dots along line */}
+                            {link.animated && (
+                              <circle r="2.5" fill={link.color}>
+                                <animateMotion
+                                  dur={link.color === '#ef4444' ? '1.8s' : '3.5s'}
+                                  repeatCount="indefinite"
+                                  path={`M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`}
+                                />
+                              </circle>
+                            )}
+                          </g>
+                        );
+                      })}
 
-                          {/* Central node boundary circle */}
-                          <circle
-                            r={size}
-                            className={`stroke-2 ${
-                              isSelected ? 'stroke-accent fill-accent/20' : 'stroke-border fill-card'
-                            } transition-colors`}
-                          />
+                      {/* Nodes drawing */}
+                      {graphData.nodes.map((node) => {
+                        const isSelected = selectedNode?.id === node.id;
+                        const size = node.type === 'host' ? 24 : node.type === 'process' ? 14 : 12;
 
-                          {/* Mini icon representations */}
-                          {node.type === 'host' && (
-                            <text y="5" textAnchor="middle" className="text-[12px] font-sans font-semibold fill-cyan-400">💻</text>
-                          )}
-                          {node.type === 'process' && (
-                            <text y="4" textAnchor="middle" className="text-[9px] fill-cyan-300">⚙️</text>
-                          )}
-                          {node.type === 'connection' && (
-                            <text y="4" textAnchor="middle" className="text-[8px] fill-indigo-300">🌐</text>
-                          )}
-                          {node.type === 'log' && (
-                            <text y="4" textAnchor="middle" className="text-[8px] fill-emerald-300">📄</text>
-                          )}
+                        let nodeColor = 'bg-cyan-500';
+                        if (node.type === 'host') nodeColor = 'bg-cyan-400';
+                        else if (node.type === 'connection') nodeColor = 'bg-indigo-500';
+                        else if (node.type === 'log') nodeColor = 'bg-emerald-500';
+                        else if (node.type === 'port') nodeColor = 'bg-purple-500';
 
-                          {/* Node Text labels */}
-                          <text
-                            y={size + 14}
-                            textAnchor="middle"
-                            className={`text-[8.5px] font-mono ${
-                              isSelected ? 'fill-accent font-bold' : 'fill-muted-foreground'
-                            }`}
+                        let riskOutline = 'stroke-border/40';
+                        if (node.risk === 'critical') riskOutline = 'stroke-red-500 animate-pulse';
+                        else if (node.risk === 'high') riskOutline = 'stroke-orange-500 animate-pulse';
+                        else if (node.risk === 'medium') riskOutline = 'stroke-yellow-500';
+
+                        return (
+                          <g
+                            key={node.id}
+                            transform={`translate(${node.x}, ${node.y})`}
+                            onClick={() => setSelectedNode(node)}
+                            className="cursor-pointer"
                           >
-                            {node.label.length > 20 ? `${node.label.substring(0, 18)}...` : node.label}
-                          </text>
-                        </g>
-                      );
-                    })}
+                            {/* Pulsing ring indicator for matches */}
+                            {node.risk !== 'low' && (
+                              <circle
+                                r={size + 6}
+                                className={`fill-none stroke-2 opacity-55 ${riskOutline}`}
+                              />
+                            )}
+
+                            {/* Central node boundary circle */}
+                            <circle
+                              r={size}
+                              className={`stroke-2 ${
+                                isSelected ? 'stroke-accent fill-accent/20' : 'stroke-border fill-card'
+                              } transition-colors`}
+                            />
+
+                            {/* Mini icon representations */}
+                            {node.type === 'host' && (
+                              <text y="5" textAnchor="middle" className="text-[12px] font-sans font-semibold fill-cyan-400">💻</text>
+                            )}
+                            {node.type === 'process' && (
+                              <text y="4" textAnchor="middle" className="text-[9px] fill-cyan-300">⚙️</text>
+                            )}
+                            {node.type === 'connection' && (
+                              <text y="4" textAnchor="middle" className="text-[8px] fill-indigo-300">🌐</text>
+                            )}
+                            {node.type === 'log' && (
+                              <text y="4" textAnchor="middle" className="text-[8px] fill-emerald-300">📄</text>
+                            )}
+
+                            {/* Node Text labels */}
+                            <text
+                              y={size + 14}
+                              textAnchor="middle"
+                              className={`text-[8.5px] font-mono ${
+                                isSelected ? 'fill-accent font-bold' : 'fill-muted-foreground'
+                              }`}
+                            >
+                              {node.label.length > 20 ? `${node.label.substring(0, 18)}...` : node.label}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </g>
                   </svg>
+                )}
+
+                {/* Reset Pan button */}
+                {!isHunting && graphData.nodes.length > 1 && (
+                  <div className="absolute bottom-3 right-3 z-10">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleResetPan}
+                      className="h-7 px-2 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/80 bg-black/60 border border-border/60 rounded-lg flex items-center gap-1 shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
+                      title="Reset Pan"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>RESET</span>
+                    </Button>
+                  </div>
                 )}
               </div>
             </TabsContent>

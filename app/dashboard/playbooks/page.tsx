@@ -155,7 +155,7 @@ export default function PlaybooksPage() {
                     initial={{ width: 0 }}
                     animate={{ width: `${selectedPlaybook.successRate}%` }}
                     transition={{ delay: 0.5, duration: 1 }}
-                    className="h-full bg-gradient-to-r from-accent to-accent/50"
+                    className="h-full bg-linear-to-r from-accent to-accent/50"
                   />
                 </div>
                 <span className="font-semibold text-accent">{selectedPlaybook.successRate}%</span>

@@ -14,11 +14,15 @@ import time
 import os
 import secrets
 from typing import List, Optional
+from contextlib import asynccontextmanager
 
-import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status, Response, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import uvicorn  # type: ignore[import-untyped]
+from fastapi import (  # type: ignore[import-untyped]
+    FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends,
+    status, Response, Request
+)
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  # type: ignore[import-untyped]
 from dotenv import load_dotenv
 import pymysql
 
@@ -113,17 +117,7 @@ from collectors.traffic import start_traffic_sniffer, get_recent_traffic_packets
 from analyzers.ip_intel import load_blocklist, get_geolocation, is_private_ip, blocklist_size
 from analyzers.threat_detector import ThreatDetector
 
-# ── App setup ─────────────────────────────────────────────────────────────────
-
-app = FastAPI(title="ForenSys SOC Backend", version="1.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# (App instantiation and middleware setup moved below collection loop/lifespan)
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -299,10 +293,10 @@ def _compute_threat_level(alerts: List[dict]) -> str:
     return "low"
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+# ── App setup & Lifespan ──────────────────────────────────────────────────────
 
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # Load blocklist in background thread (don't block startup)
     t = threading.Thread(target=load_blocklist, daemon=True)
     t.start()
@@ -311,6 +305,17 @@ async def startup() -> None:
     # Start collection loop
     asyncio.create_task(collect_loop())
     print("[ForenSys] Backend started — collecting real data on port 8000")
+    yield
+
+app = FastAPI(title="ForenSys SOC Backend", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
@@ -524,7 +529,7 @@ def load_users() -> List[dict]:
                     u["permissions"] = json.loads(u["permissions"])
                 except Exception:
                     u["permissions"] = []
-            return users
+            return list(users)
     except Exception as e:
         print(f"Error loading users from DB: {e}")
         return []

@@ -683,7 +683,7 @@ export default function NetworkIntelligencePage() {
                       return (
                         <div
                           key={pkt.id}
-                          className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2.5 items-center hover:bg-white/[0.02] transition-colors"
+                          className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2.5 items-center hover:bg-white/2 transition-colors"
                         >
                           {/* Timestamp */}
                           <div className="text-muted-foreground text-[11px]">
@@ -1194,7 +1194,7 @@ export default function NetworkIntelligencePage() {
                                   <Button
                                     size="sm"
                                     onClick={() => handleAnalyzeWithCopilot(intel)}
-                                    className="w-full text-xs h-7.5 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 text-cyan-200 border border-cyan-700/50 hover:from-cyan-900/60 hover:to-blue-900/60 flex items-center justify-center gap-1.5 shadow-sm"
+                                    className="w-full text-xs h-7.5 bg-linear-to-r from-cyan-900/40 to-blue-900/40 text-cyan-200 border border-cyan-700/50 hover:from-cyan-900/60 hover:to-blue-900/60 flex items-center justify-center gap-1.5 shadow-sm"
                                   >
                                     <Brain className="w-3.5 h-3.5 text-cyan-400" />
                                     <span>Ask Iris to Analyze</span>

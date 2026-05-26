@@ -227,7 +227,7 @@ export default function RBACPage() {
           return (
             <div 
               key={role} 
-              className={`rounded-lg p-4 border bg-gradient-to-br ${meta.gradient} transition-all duration-300 hover:scale-[1.02] flex items-center justify-between shadow-[0_4px_12px_rgba(0,0,0,0.15)]`}
+              className={`rounded-lg p-4 border bg-linear-to-br ${meta.gradient} transition-all duration-300 hover:scale-[1.02] flex items-center justify-between shadow-[0_4px_12px_rgba(0,0,0,0.15)]`}
             >
               <div className="space-y-1">
                 <span className="text-[9px] uppercase font-bold tracking-widest text-muted-foreground block">{meta.label}</span>
@@ -344,7 +344,7 @@ export default function RBACPage() {
                 {/* User Header */}
                 <div className="bg-card/40 p-5 rounded-xl border border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_4px_20px_rgba(0,0,0,0.2)] relative overflow-hidden">
                   {/* Subtle backglow gradient based on user role */}
-                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full filter blur-[40px] opacity-10 bg-current ${
+                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full filter blur-2xl opacity-10 bg-current ${
                     selectedUser.role === 'admin' ? 'text-red-500' : selectedUser.role === 'analyst' ? 'text-accent' : selectedUser.role === 'responder' ? 'text-orange-500' : 'text-zinc-500'
                   }`} />
                   

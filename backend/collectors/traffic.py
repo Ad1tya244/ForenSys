@@ -14,7 +14,8 @@ import time
 import uuid
 from typing import Dict, List
 
-from scapy.all import sniff, IP, TCP, UDP, ICMP
+from scapy.all import sniff
+from scapy.layers.inet import IP, TCP, UDP, ICMP
 try:
     from scapy.layers.inet6 import IPv6
 except ImportError:
@@ -94,7 +95,7 @@ def _process_scapy_packet(packet) -> None:
         ip_layer = packet[IP]
         src_ip = ip_layer.src
         dst_ip = ip_layer.dst
-    elif IPv6 and packet.haslayer(IPv6):
+    elif IPv6 is not None and packet.haslayer(IPv6):
         ip_layer = packet[IPv6]
         src_ip = ip_layer.src
         dst_ip = ip_layer.dst
