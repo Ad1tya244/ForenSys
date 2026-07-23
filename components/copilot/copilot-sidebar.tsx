@@ -120,7 +120,7 @@ export function CopilotSidebar() {
         animate={{ x: isOpen ? 0 : 420 }}
         transition={{ type: 'spring', damping: 22, stiffness: 280 }}
         className="fixed right-0 top-0 h-screen w-96 z-50 flex flex-col shadow-2xl shadow-black/50"
-        style={{ background: 'hsl(220 15% 9%)', borderLeft: '1px solid hsl(220 13% 18%)' }}
+        style={{ background: '#000000', borderLeft: '1px solid hsl(0 0% 14%)' }}
       >
         {/* Header */}
         <div className="p-4 border-b border-border/50 flex items-center justify-between shrink-0">

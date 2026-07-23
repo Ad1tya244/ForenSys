@@ -57,14 +57,14 @@ const navItems = [
 const threatLevelColors: Record<string, string> = {
   low: 'bg-green-500',
   medium: 'bg-yellow-500',
-  high: 'bg-orange-500',
+  high: 'bg-red-500',
   critical: 'bg-red-500',
 };
 
 const threatLevelText: Record<string, string> = {
   low: 'text-green-400',
   medium: 'text-yellow-400',
-  high: 'text-orange-400',
+  high: 'text-red-400',
   critical: 'text-red-400',
 };
 
@@ -141,13 +141,13 @@ export default function DashboardLayout({
         className={`${
           sidebarOpen ? 'w-56' : 'w-16'
         } bg-sidebar border-r border-sidebar-border transition-all duration-300 flex flex-col overflow-hidden shrink-0`}
-        style={{ background: 'hsl(220 15% 8%)' }}
+        style={{ background: 'hsl(0 0% 2%)' }}
       >
         {/* Logo */}
         <div className="p-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-sidebar-primary rounded-lg flex items-center justify-center shrink-0">
-              <Shield className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 bg-accent/20 border border-accent/40 rounded-lg flex items-center justify-center shrink-0">
+              <Shield className="w-5 h-5 text-accent" />
             </div>
             <AnimatePresence>
               {sidebarOpen && (
@@ -219,7 +219,7 @@ export default function DashboardLayout({
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className="h-12 border-b border-border/50 flex items-center justify-between px-4 shrink-0"
-          style={{ background: 'hsl(220 13% 9%)' }}>
+          style={{ background: 'hsl(0 0% 4%)' }}>
           {/* Breadcrumb */}
           <div className="flex items-center gap-1 text-xs">
             {breadcrumbs.map((crumb, i) => (

@@ -384,20 +384,20 @@ export default function Dashboard() {
         <div className="glass rounded-lg border border-border/50 overflow-hidden">
           <div className="p-3 border-b border-border/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-purple-400" />
+              <Shield className="w-4 h-4 text-accent" />
               <h2 className="text-sm font-semibold text-foreground">SHA-256 Sealed Forensic Vault</h2>
             </div>
-            <Badge className="bg-purple-900/30 text-purple-300 border-purple-700/50 text-xs">
+            <Badge className="bg-accent/15 text-accent border-accent/30 text-xs">
               {evidenceVault.length} Packages
             </Badge>
           </div>
           <ScrollArea className="h-56 w-full">
             <div className="p-3 space-y-2">
               {evidenceVault.slice(0, 8).map((evd, idx) => (
-                <div key={`${evd.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-purple-500/20 space-y-1">
+                <div key={`${evd.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-border/30 space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono font-bold text-purple-300">{evd.id}</span>
-                    <Badge className="bg-green-900/30 text-green-300 text-[10px]">
+                    <span className="font-mono font-bold text-accent">{evd.id}</span>
+                    <Badge className="bg-green-950/40 text-green-400 border-green-800/50 text-[10px]">
                       {evd.status}
                     </Badge>
                   </div>
@@ -419,35 +419,35 @@ export default function Dashboard() {
       </div>
 
       {/* Self-Protection Audit Log Section */}
-      <div className="glass rounded-lg border border-emerald-500/30 overflow-hidden">
-        <div className="p-3 border-b border-emerald-500/30 flex items-center justify-between bg-emerald-950/20">
+      <div className="glass rounded-lg border border-border/50 overflow-hidden">
+        <div className="p-3 border-b border-border/50 flex items-center justify-between bg-black/40">
           <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-400" />
+            <Shield className="w-4 h-4 text-accent" />
             <h2 className="text-sm font-semibold text-foreground">Self-Protection Audit Log (Trusted Internal Activity)</h2>
           </div>
-          <Badge className="bg-emerald-900/30 text-emerald-300 border-emerald-700/50 text-xs">
+          <Badge className="bg-accent/15 text-accent border-accent/30 text-xs">
             Self-Protection Layer Active ({selfProtectionAudit.length})
           </Badge>
         </div>
         <ScrollArea className="h-44 w-full">
           <div className="p-3 space-y-1.5 font-mono text-xs">
             {selfProtectionAudit.slice(0, 10).map((audit, idx) => (
-              <div key={`${audit.id}-${idx}`} className="p-2 bg-black/40 rounded border border-emerald-500/20 flex items-center justify-between gap-3">
+              <div key={`${audit.id}-${idx}`} className="p-2 bg-black/40 rounded border border-border/30 flex items-center justify-between gap-3">
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-emerald-400 font-bold text-[11px]">{audit.id}</span>
+                    <span className="text-accent font-bold text-[11px]">{audit.id}</span>
                     <span className="text-foreground">{audit.process}</span>
                     {audit.pid && <span className="text-muted-foreground text-[10px]">(PID: {audit.pid})</span>}
-                    <Badge className="bg-blue-950/50 text-blue-300 border-blue-800/40 text-[10px]">
+                    <Badge className="bg-cyan-950/50 text-cyan-300 border-cyan-800/40 text-[10px]">
                       Ignored (Trusted Internal Activity)
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
-                    Reason: <span className="text-emerald-300">{audit.reason}</span> ({audit.src_ip} → {audit.dst_ip})
+                    Reason: <span className="text-foreground">{audit.reason}</span> ({audit.src_ip} → {audit.dst_ip})
                   </p>
                 </div>
                 <div className="text-right shrink-0 space-y-0.5">
-                  <span className="text-[10px] text-emerald-400 font-semibold block">No Incident Created</span>
+                  <span className="text-[10px] text-green-400 font-semibold block">No Incident Created</span>
                   <span className="text-[10px] text-muted-foreground block">No Remediation Executed</span>
                 </div>
               </div>

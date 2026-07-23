@@ -29,22 +29,22 @@ export default function FirewallRulesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Shield className="w-6 h-6 text-purple-400" />
+            <Shield className="w-6 h-6 text-accent" />
             Firewall Rules & IP Blocklist
           </h1>
           <p className="text-muted-foreground text-sm">
             Active macOS PF firewall rules, active perimeter blocklists, and defense configurations
           </p>
         </div>
-        <Badge className="bg-purple-950/60 text-purple-300 border-purple-700/50 px-3 py-1 font-mono text-xs">
+        <Badge className="bg-accent/15 text-accent border-accent/30 px-3 py-1 font-mono text-xs">
           Perimeter Engine Active ({blockedIps.length} IPs Blocked)
         </Badge>
       </div>
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass p-4 rounded-lg border border-purple-500/30">
-          <p className="text-xs text-purple-300">Active Blocked Source IPs</p>
+        <div className="glass p-4 rounded-lg border border-accent/30">
+          <p className="text-xs text-accent">Active Blocked Source IPs</p>
           <p className="text-2xl font-bold text-foreground mt-1 font-mono">{blockedIps.length}</p>
         </div>
         <div className="glass p-4 rounded-lg border border-border/50">
@@ -58,10 +58,10 @@ export default function FirewallRulesPage() {
       </div>
 
       {/* Active IP Blocklist Table */}
-      <div className="glass rounded-lg border border-purple-500/30 overflow-hidden space-y-3 p-4">
+      <div className="glass rounded-lg border border-border/50 overflow-hidden space-y-3 p-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Lock className="w-4 h-4 text-purple-400" />
+            <Lock className="w-4 h-4 text-accent" />
             Active Perimeter IP Blocklist
           </h2>
           <div className="relative w-full md:w-72">
@@ -90,9 +90,9 @@ export default function FirewallRulesPage() {
             <tbody className="divide-y divide-border/20">
               {filteredBlocklist.map((item, idx) => (
                 <tr key={`${item.ip}-${idx}`} className="hover:bg-white/5 transition-colors">
-                  <td className="p-3 font-bold text-purple-300">{item.ip}</td>
+                  <td className="p-3 font-bold text-accent">{item.ip}</td>
                   <td className="p-3">
-                    <Badge className={item.status === 'active' ? 'bg-red-900/30 text-red-300 border-red-700/50 text-[10px]' : 'bg-green-900/30 text-green-300 border-green-700/50 text-[10px]'}>
+                    <Badge className={item.status === 'active' ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]' : 'bg-green-950/40 text-green-400 border-green-800/50 text-[10px]'}>
                       {item.status.toUpperCase()}
                     </Badge>
                   </td>
@@ -104,7 +104,7 @@ export default function FirewallRulesPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 text-[10px] border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20 gap-1"
+                        className="h-6 text-[10px] border-green-500/40 text-green-400 hover:bg-green-500/20 gap-1"
                         onClick={() => unblockIpAction(item.ip)}
                       >
                         <RotateCcw className="w-3 h-3" /> Unblock / Rollback IP
@@ -136,7 +136,13 @@ export default function FirewallRulesPage() {
             <div key={rule.id || idx} className="p-3 bg-black/40 rounded border border-border/30 space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-foreground">{rule.name}</span>
-                <Badge className="bg-accent/15 text-accent border-accent/30 text-[10px]">
+                <Badge className={
+                  rule.severity === 'critical' || rule.severity === 'high'
+                    ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]'
+                    : rule.severity === 'medium'
+                    ? 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50 text-[10px]'
+                    : 'bg-green-950/40 text-green-400 border-green-800/50 text-[10px]'
+                }>
                   {rule.severity.toUpperCase()}
                 </Badge>
               </div>

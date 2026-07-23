@@ -77,9 +77,9 @@ export default function AutoRemediationHistoryPage() {
           <p className="text-xs text-yellow-400">Rolled Back Actions</p>
           <p className="text-2xl font-bold text-yellow-300 mt-1 font-mono">{rolledBackCount}</p>
         </div>
-        <div className="glass p-4 rounded-lg border border-blue-500/30">
-          <p className="text-xs text-blue-400">Self-Protection Safeguards</p>
-          <p className="text-2xl font-bold text-blue-300 mt-1 font-mono">{skippedCount}</p>
+        <div className="glass p-4 rounded-lg border border-cyan-500/30">
+          <p className="text-xs text-cyan-400">Self-Protection Safeguards</p>
+          <p className="text-2xl font-bold text-cyan-300 mt-1 font-mono">{skippedCount}</p>
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export default function AutoRemediationHistoryPage() {
                 <tr key={`${log.id}-${idx}`} className="hover:bg-white/5 transition-colors">
                   <td className="p-3 font-bold text-accent">{log.id}</td>
                   <td className="p-3">
-                    <Badge className="bg-purple-950/50 text-purple-300 border-purple-800/40 text-[10px]">
+                    <Badge className="bg-cyan-950/50 text-cyan-300 border-cyan-800/40 text-[10px]">
                       {log.actionType}
                     </Badge>
                   </td>
@@ -140,10 +140,10 @@ export default function AutoRemediationHistoryPage() {
                     <Badge
                       className={
                         log.status === 'success'
-                          ? 'bg-green-900/30 text-green-300 border-green-700/50 text-[10px]'
+                          ? 'bg-green-950/40 text-green-400 border-green-800/50 text-[10px]'
                           : log.status === 'rolled_back'
-                          ? 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50 text-[10px]'
-                          : 'bg-blue-900/30 text-blue-300 border-blue-700/50 text-[10px]'
+                          ? 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50 text-[10px]'
+                          : 'bg-cyan-950/40 text-cyan-300 border-cyan-800/50 text-[10px]'
                       }
                     >
                       {log.status.toUpperCase()}

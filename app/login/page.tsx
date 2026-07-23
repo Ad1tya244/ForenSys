@@ -198,9 +198,9 @@ export default function LoginPage() {
 
       {/* ─── Ambient glows ─── */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full"
+        <div className="absolute -top-40 -left-40 w-175 h-175 rounded-full"
           style={{ background: 'radial-gradient(circle, rgba(0,200,180,0.04) 0%, transparent 65%)' }} />
-        <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full"
+        <div className="absolute -bottom-40 -right-40 w-150 h-150 rounded-full"
           style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.04) 0%, transparent 65%)' }} />
       </div>
 
@@ -209,11 +209,10 @@ export default function LoginPage() {
 
         {/* Top navigation bar — mirrors dashboard header style */}
         <div className="h-12 flex items-center justify-between px-6 border-b border-border/40 shrink-0"
-          style={{ background: 'hsl(220 13% 8%)' }}>
+          style={{ background: '#000000' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md flex items-center justify-center"
-              style={{ background: 'hsl(180 80% 35%)' }}>
-              <Shield className="w-4 h-4 text-white" />
+            <div className="w-7 h-7 rounded-md flex items-center justify-center bg-accent/20 border border-accent/40">
+              <Shield className="w-4 h-4 text-accent" />
             </div>
             <span className="text-sm font-bold tracking-widest text-white">
               FOREN<span className="text-accent">SYS</span>
@@ -235,7 +234,7 @@ export default function LoginPage() {
         </div>
 
         {/* Content area */}
-        <div className="flex-1 flex flex-col p-5 gap-4 overflow-hidden">
+        <div className="flex-1 flex flex-col p-5 gap-4 overflow-hidden bg-black">
 
           {/* Hero text */}
           <div className="space-y-0.5">
@@ -253,11 +252,11 @@ export default function LoginPage() {
               <RadarHUD />
 
               {/* Stat cards — same glass style as dashboard KPI cards */}
-              <div className="grid grid-cols-4 gap-3 w-full max-w-[520px]">
+              <div className="grid grid-cols-4 gap-3 w-full max-w-130">
                 {stats.map(s => {
                   const Icon = s.icon;
                   return (
-                    <div key={s.label} className="glass rounded-lg p-3 border border-border/50 flex flex-col gap-1.5">
+                    <div key={s.label} className="bg-black rounded-lg p-3 border border-border/50 flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">{s.label}</span>
                         <Icon className={`w-3 h-3 ${s.color}`} />
@@ -271,9 +270,9 @@ export default function LoginPage() {
           </div>
 
           {/* Terminal log — same card style as dashboard panels */}
-          <div className="glass rounded-lg border border-border/50 overflow-hidden shrink-0">
+          <div className="bg-black rounded-lg border border-border/50 overflow-hidden shrink-0">
             <div className="flex items-center justify-between px-4 py-2 border-b border-border/50"
-              style={{ background: 'hsl(220 13% 10%)' }}>
+              style={{ background: '#050505' }}>
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
@@ -287,7 +286,7 @@ export default function LoginPage() {
                 <div className="w-2 h-2 rounded-full bg-green-400/50" />
               </div>
             </div>
-            <div className="h-32 overflow-y-auto p-3 space-y-0.5" style={{ background: 'hsl(220 15% 7%)' }}>
+            <div className="h-32 overflow-y-auto p-3 space-y-0.5" style={{ background: '#000000' }}>
               {logs.map((log, i) => (
                 <div key={i} className="flex items-start gap-2.5 font-mono text-[10px] leading-5">
                   <span className="text-muted-foreground/50 shrink-0 w-16">{log.time}</span>
@@ -310,11 +309,10 @@ export default function LoginPage() {
 
       {/* Vertical divider gradient */}
       <div className="hidden lg:block w-px shrink-0"
-        style={{ background: 'linear-gradient(to bottom, transparent, hsl(180 80% 45% / 0.2) 30%, hsl(180 80% 45% / 0.2) 70%, transparent)' }} />
+        style={{ background: 'linear-gradient(to bottom, transparent, hsl(185 100% 48% / 0.2) 30%, hsl(185 100% 48% / 0.2) 70%, transparent)' }} />
 
       {/* ════════════════════════ RIGHT PANEL ════════════════════════ */}
-      <div className="relative z-10 w-full lg:w-[440px] xl:w-[480px] shrink-0 flex items-center justify-center p-6 h-screen overflow-y-auto"
-        style={{ background: 'hsl(220 15% 7%)' }}>
+      <div className="relative z-10 w-full lg:w-110 xl:w-120 shrink-0 flex items-center justify-center p-6 h-screen overflow-y-auto bg-black">
 
         <motion.div
           className="w-full max-w-sm"
@@ -322,12 +320,12 @@ export default function LoginPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         >
-          {/* ── Card — glass style matching dashboard cards ── */}
-          <div className="glass-dark rounded-xl border border-border/60 overflow-hidden"
-            style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)' }}>
+          {/* ── Card — solid deep black ── */}
+          <div className="bg-black rounded-xl border border-border/60 overflow-hidden"
+            style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.8)' }}>
 
             {/* Accent top line */}
-            <div className="h-px w-full" style={{ background: 'linear-gradient(90deg, transparent, hsl(180 80% 45% / 0.7), transparent)' }} />
+            <div className="h-px w-full" style={{ background: 'linear-gradient(90deg, transparent, hsl(185 100% 48% / 0.7), transparent)' }} />
 
             <div className="p-7">
               {/* Logo block */}
@@ -340,9 +338,8 @@ export default function LoginPage() {
                 >
                   {/* Glow behind icon */}
                   <div className="absolute inset-0 rounded-xl blur-xl scale-150"
-                    style={{ background: 'hsl(180 80% 45% / 0.15)' }} />
-                  <div className="relative w-14 h-14 rounded-xl flex items-center justify-center border border-accent/30"
-                    style={{ background: 'linear-gradient(135deg, hsl(180 80% 35% / 0.2), hsl(220 13% 12% / 0.6))' }}>
+                    style={{ background: 'hsl(185 100% 48% / 0.15)' }} />
+                  <div className="relative w-14 h-14 rounded-xl flex items-center justify-center border border-accent/30 bg-black">
                     <Shield className="w-7 h-7 text-accent" />
                   </div>
                 </motion.div>
@@ -356,7 +353,7 @@ export default function LoginPage() {
                 </p>
 
                 {/* Status badge — same pill style used in dashboard header */}
-                <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/50 bg-card/50">
+                <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/50 bg-black">
                   <motion.div
                     className="w-1.5 h-1.5 rounded-full bg-green-400"
                     animate={{ opacity: [1, 0.4, 1] }}
@@ -369,7 +366,7 @@ export default function LoginPage() {
               </div>
 
               {/* Notice banner — same card/border style */}
-              <div className="mb-6 flex gap-2.5 items-start rounded-lg border border-yellow-400/20 bg-yellow-400/5 px-3 py-2.5">
+              <div className="mb-6 flex gap-2.5 items-start rounded-lg border border-yellow-400/20 bg-black px-3 py-2.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-px" />
                 <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
                   {setupRequired
@@ -444,8 +441,7 @@ export default function LoginPage() {
                   disabled={loading}
                   whileHover={{ scale: loading ? 1 : 1.01 }}
                   whileTap={{ scale: loading ? 1 : 0.99 }}
-                  className="relative w-full h-10 rounded-lg font-bold text-xs uppercase tracking-widest font-mono flex items-center justify-center gap-2 mt-2 overflow-hidden transition-opacity disabled:opacity-60"
-                  style={{ background: 'hsl(180 80% 38%)', color: 'hsl(220 13% 10%)' }}
+                  className="relative w-full h-10 rounded-lg font-bold text-xs uppercase tracking-widest font-mono flex items-center justify-center gap-2 mt-2 overflow-hidden transition-opacity disabled:opacity-60 text-black bg-accent"
                 >
                   {/* Shine on hover */}
                   <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity"
@@ -466,7 +462,7 @@ export default function LoginPage() {
                 {[
                   { icon: <Wifi className="w-3.5 h-3.5" />,       label: 'TLS 1.3',     color: 'text-accent' },
                   { icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: 'Monitored',   color: 'text-green-400' },
-                  { icon: <Activity className="w-3.5 h-3.5" />,    label: 'Live Audit',  color: 'text-blue-400' },
+                  { icon: <Activity className="w-3.5 h-3.5" />,    label: 'Live Audit',  color: 'text-accent' },
                 ].map(f => (
                   <div key={f.label} className="flex flex-col items-center gap-1 text-center">
                     <span className={f.color}>{f.icon}</span>
@@ -486,8 +482,8 @@ export default function LoginPage() {
         <style jsx global>{`
           .soc-input {
             width: 100%;
-            background: hsl(220 13% 9%);
-            border: 1px solid hsl(220 13% 18%);
+            background: #000000;
+            border: 1px solid hsl(0 0% 16%);
             border-radius: 8px;
             padding: 9px 12px 9px 38px;
             font-size: 13px;
@@ -500,8 +496,8 @@ export default function LoginPage() {
             color: hsl(0 0% 40%);
           }
           .soc-input:focus {
-            border-color: hsl(180 80% 45% / 0.5);
-            box-shadow: 0 0 0 3px hsl(180 80% 45% / 0.08);
+            border-color: hsl(185 100% 48% / 0.5);
+            box-shadow: 0 0 0 3px hsl(185 100% 48% / 0.08);
           }
         `}</style>
       </div>
