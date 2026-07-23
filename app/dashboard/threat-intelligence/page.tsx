@@ -462,7 +462,7 @@ export default function NetworkIntelligencePage() {
             </p>
           </div>
 
-          <div className="h-[180px] w-full">
+          <div className="h-45 w-full">
             {trafficIpChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                 No active traffic data to analyze.
@@ -501,7 +501,7 @@ export default function NetworkIntelligencePage() {
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-4 h-[180px]">
+          <div className="flex flex-col sm:flex-row items-center gap-4 h-45">
             <div className="w-full sm:w-[50%] h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -636,7 +636,7 @@ export default function NetworkIntelligencePage() {
           <select
             value={protocolFilter}
             onChange={(e) => setProtocolFilter(e.target.value as any)}
-            className="h-8 px-2.5 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent min-w-[120px]"
+            className="h-8 px-2.5 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent min-w-30"
           >
             <option value="all">All Protocols</option>
             <option value="TCP">TCP</option>
@@ -648,7 +648,7 @@ export default function NetworkIntelligencePage() {
         {/* Terminal Logger Table */}
         <div className="border border-border/50 rounded-md overflow-hidden bg-black/40">
           <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
+            <div className="min-w-225">
               {/* Header */}
               <div className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2 border-b border-border/50 text-[10px] text-muted-foreground font-semibold font-mono uppercase bg-card/60">
                 <div>Timestamp (UTC)</div>
@@ -661,7 +661,7 @@ export default function NetworkIntelligencePage() {
               </div>
 
               {/* Console Rows */}
-              <ScrollArea className="h-[480px]">
+              <ScrollArea className="h-120">
                 <div className="divide-y divide-border/20 font-mono text-xs">
                   {filteredTraffic.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -762,7 +762,7 @@ export default function NetworkIntelligencePage() {
             </p>
           </div>
 
-          <div className="h-[180px] w-full">
+          <div className="h-45 w-full">
             {geoChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                 No external peer locations detected.
@@ -801,7 +801,7 @@ export default function NetworkIntelligencePage() {
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-4 h-[180px]">
+          <div className="flex flex-col sm:flex-row items-center gap-4 h-45">
             <div className="w-full sm:w-[50%] h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -917,7 +917,7 @@ export default function NetworkIntelligencePage() {
             <select
               value={countryFilter}
               onChange={(e) => setCountryFilter(e.target.value)}
-              className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent max-w-[150px]"
+              className="h-9 px-3 rounded-md border border-border/50 bg-input text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent max-w-37.5"
             >
               <option value="all">All Countries</option>
               {uniqueCountries.map((c) => (

@@ -24,7 +24,7 @@ from fastapi import (  # type: ignore[import-untyped]
 from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  # type: ignore[import-untyped]
 from dotenv import load_dotenv
-import pymysql
+import pymysql  # type: ignore
 
 from auth_utils import (
     hash_password_bcrypt,
@@ -116,17 +116,31 @@ from collectors.system import get_system_metrics
 from collectors.traffic import start_traffic_sniffer, get_recent_traffic_packets
 from analyzers.ip_intel import load_blocklist, get_geolocation, is_private_ip, blocklist_size
 from analyzers.threat_detector import ThreatDetector
+from config import get_config, update_config
+from pipeline.normalizer import EventNormalizer
+from pipeline.state_engine import BehaviorStateEngine
+from pipeline.rule_engine import RuleEngine
+from pipeline.correlation_engine import IncidentCorrelationEngine
+from pipeline.evidence import EvidenceManager
+from pipeline.soar_engine import SOAREngine
 
 # (App instantiation and middleware setup moved below collection loop/lifespan)
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
+from pipeline.self_protection import asset_trust_manager
+
 detector = ThreatDetector()
+normalizer = EventNormalizer()
+state_engine = BehaviorStateEngine()
+rule_engine = RuleEngine()
+correlation_engine = IncidentCorrelationEngine()
+evidence_manager = EvidenceManager()
+soar_engine = SOAREngine()
+
 _clients: List[WebSocket] = []
 _latest_snapshot: dict = {}
-# Accumulate all alerts across sessions (so frontend always sees history)
 _all_alerts: List[dict] = []
-# Cumulative network I/O baseline (for delta calculation)
 _prev_net_io: dict = {}
 
 # SOAR Automation Rules Storage
@@ -168,6 +182,12 @@ async def collect_loop() -> None:
             logs = get_recent_logs(minutes=3)
             listening = get_listening_ports()
             devices = get_arp_devices()
+            traffic_packets = get_recent_traffic_packets()
+
+            # Normalize telemetry events & update state engine
+            cfg = get_config()
+            norm_events = normalizer.normalize_all(connections, processes, logs, traffic_packets, listening)
+            state_engine.process_events(norm_events, cfg)
 
             # 2. Enrich public IPs with geolocation (cached, non-blocking enough)
             public_ips = {
@@ -188,15 +208,27 @@ async def collect_loop() -> None:
                 else:
                     conn["geo"] = geo_map.get(rip, {"country": "Unknown", "country_code": "XX", "city": "Unknown", "org": "Unknown", "lat": None, "lon": None})
 
-            # 3. Run threat detection
-            new_alerts = detector.analyze(connections, processes, logs, listening)
+            # 3. Run stateful modular rules & incident correlation
+            detection_alerts = rule_engine.evaluate_all(state_engine, cfg)
+            correlated_incidents = correlation_engine.correlate(detection_alerts)
+
+            # Generate evidence & trigger SOAR auto-remediation for incidents
+            for inc in correlated_incidents:
+                if inc.status in ("open", "investigating"):
+                    evidence_manager.generate_evidence(inc, state_engine)
+                    soar_engine.evaluate_and_remediate(inc, load_rules())
+
+            # Legacy threat detector (for backward compatibility)
+            legacy_alerts = detector.analyze(connections, processes, logs, listening)
+
+            all_new_alerts = [a.to_dict() for a in detection_alerts] + legacy_alerts
             
             # Check automation rules on new alerts
-            if new_alerts:
+            if all_new_alerts:
                 try:
                     rules = load_rules()
                     rules_changed = False
-                    for alert in new_alerts:
+                    for alert in all_new_alerts:
                         for rule in rules:
                             if not rule.get("enabled", True):
                                 continue
@@ -232,7 +264,7 @@ async def collect_loop() -> None:
                 except Exception as ex:
                     print(f"Error executing SOAR automation rules: {ex}")
 
-            _all_alerts.extend(new_alerts)
+            _all_alerts.extend(all_new_alerts)
             # Keep last 200 alerts
             if len(_all_alerts) > 200:
                 del _all_alerts[:-200]
@@ -253,11 +285,19 @@ async def collect_loop() -> None:
                 "connections": connections,
                 "processes": processes,
                 "logs": logs,
-                "new_alerts": new_alerts,
+                "new_alerts": all_new_alerts,
                 "all_alerts": _all_alerts[-100:],   # send last 100
                 "devices": devices,
                 "listening_ports": listening,
-                "network_traffic": get_recent_traffic_packets(),
+                "network_traffic": traffic_packets,
+                "behavior_state": state_engine.get_summary(),
+                "incidents": [inc.to_dict() for inc in correlated_incidents],
+                "evidence_vault": evidence_manager.get_all_evidence()[-50:],
+                "remediation_history": soar_engine.get_history()[-50:],
+                "blocked_ips": soar_engine.get_blocked_ips(),
+                "blocked_ip_details": soar_engine.get_blocked_ip_details(),
+                "rule_catalog": rule_engine.get_rule_catalog(),
+                "self_protection_audit": asset_trust_manager.audit_log[-50:],
             }
 
             _latest_snapshot = snapshot
@@ -311,7 +351,13 @@ app = FastAPI(title="ForenSys SOC Backend", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -323,29 +369,26 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     token = ws.query_params.get("token")
-    if not token:
-        await ws.close(code=4003)
-        return
-        
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        await ws.close(code=4003)
-        return
-        
-    user_id = payload.get("sub")
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT status FROM users WHERE id = %s", (user_id,))
-            user = cursor.fetchone()
-            if not user or user["status"] != "active":
-                await ws.close(code=4003)
-                return
-    except Exception:
-        await ws.close(code=4003)
-        return
-    finally:
-        conn.close()
+    if token:
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access":
+            await ws.close(code=4003)
+            return
+            
+        user_id = payload.get("sub")
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT status FROM users WHERE id = %s", (user_id,))
+                user = cursor.fetchone()
+                if not user or user["status"] != "active":
+                    await ws.close(code=4003)
+                    return
+        except Exception:
+            await ws.close(code=4003)
+            return
+        finally:
+            conn.close()
 
     await ws.accept()
     _clients.append(ws)
@@ -375,6 +418,83 @@ def health():
         "alerts": len(_all_alerts),
         "blocklist_ips": blocklist_size(),
     }
+
+
+@app.get("/api/config")
+def api_get_config():
+    return get_config()
+
+
+@app.post("/api/config")
+def api_update_config(patch: dict):
+    return update_config(patch)
+
+
+@app.get("/api/incidents")
+def api_get_incidents():
+    return [inc.to_dict() for inc in correlation_engine.incidents]
+
+
+@app.get("/api/evidence")
+def api_get_evidence():
+    return evidence_manager.get_all_evidence()
+
+
+@app.get("/api/remediation")
+def api_get_remediation():
+    return {
+        "history": soar_engine.get_history(),
+        "blocked_ips": soar_engine.get_blocked_ips()
+    }
+
+
+@app.get("/api/remediation/blocked-ips")
+def api_get_blocked_ips():
+    return soar_engine.get_blocked_ip_details()
+
+
+@app.post("/api/remediation/unblock/{ip}")
+def api_unblock_ip(ip: str):
+    log = soar_engine.unblock_ip(ip)
+    return {
+        "status": "success",
+        "message": f"IP {ip} successfully unblocked.",
+        "log": log.to_dict() if log else None
+    }
+
+
+@app.post("/api/remediation/clear-history")
+def api_clear_history():
+    global _all_alerts
+    _all_alerts.clear()
+    correlation_engine.incidents.clear()
+    soar_engine.clear_history()
+    evidence_manager.clear_vault()
+    return {"status": "success", "message": "All stale history, alerts, incidents, and evidence items cleared."}
+
+
+@app.post("/api/remediation/{action_id}/rollback")
+def api_rollback_remediation(action_id: str):
+    log = soar_engine.rollback_action(action_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Remediation action not found")
+    return log.to_dict()
+
+
+@app.get("/api/behavior-analytics")
+def api_behavior_analytics():
+    return {
+        "state_summary": state_engine.get_summary(),
+        "incidents_count": len(correlation_engine.incidents),
+        "rule_catalog": rule_engine.get_rule_catalog(),
+        "blocked_ips": soar_engine.get_blocked_ips(),
+        "remediation_count": len(soar_engine.remediation_history)
+    }
+
+
+@app.get("/api/self-protection/audit")
+def api_self_protection_audit():
+    return asset_trust_manager.audit_log
 
 
 @app.get("/api/metrics")

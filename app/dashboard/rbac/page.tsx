@@ -264,7 +264,7 @@ export default function RBACPage() {
             </div>
           </div>
           
-          <ScrollArea className="flex-1 max-h-[550px]">
+          <ScrollArea className="flex-1 max-h-137.5">
             <div className="space-y-2 p-3">
               <AnimatePresence>
                 {filtered.length === 0 ? (
@@ -323,14 +323,14 @@ export default function RBACPage() {
         </div>
 
         {/* Permissions Panel */}
-        <div className="lg:col-span-3 glass rounded-xl border border-border/50 overflow-hidden shadow-lg flex flex-col min-h-[500px]">
+        <div className="lg:col-span-3 glass rounded-xl border border-border/50 overflow-hidden shadow-lg flex flex-col min-h-125">
           {!selectedUser ? (
             <div className="p-12 text-center h-full flex flex-col items-center justify-center flex-1">
               <div className="p-4 rounded-full bg-accent/10 border border-accent/20 mb-4 animate-pulse">
                 <Shield className="w-8 h-8 text-accent/80" />
               </div>
               <p className="text-sm font-semibold text-foreground">Select an Operator Profile</p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">Select an active profile from the left list to modify user roles, reset passwords, or tweak granular SOC console permissions.</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-70">Select an active profile from the left list to modify user roles, reset passwords, or tweak granular SOC console permissions.</p>
             </div>
           ) : (
             <AnimatePresence mode="wait">

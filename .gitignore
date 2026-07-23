@@ -148,3 +148,10 @@ backend/users.json
 backend/settings.json
 backend/reports.json
 backend/rules.json
+backend/remediation_history.json
+backend/evidence_vault.json
+backend/sim_vault.json
+backend/sim_remediation.json
+backend/scripts/sim_vault.json
+backend/scripts/sim_remediation.json
+*.json.bak

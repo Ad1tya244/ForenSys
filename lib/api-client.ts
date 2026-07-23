@@ -160,6 +160,72 @@ export interface RealNetworkPacket {
   info: string;
 }
 
+export interface CorrelatedIncident {
+  id: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'investigating' | 'contained' | 'resolved';
+  riskScore: number;
+  confidence: number;
+  createdAt: string;
+  lastUpdated: string;
+  timeline: { timestamp: string; rule: string; title: string; description: string; severity: string }[];
+  relatedAlerts: string[];
+  relatedDetections: any[];
+  mitreStages: string[];
+  affectedAssets: string[];
+  primarySourceIp?: string;
+  primaryDestIp?: string;
+  primaryProcess?: string;
+  evidenceCount: number;
+  evidenceIds: string[];
+}
+
+export interface ForensicEvidencePackage {
+  id: string;
+  incidentId: string;
+  timestamp: string;
+  status: 'Captured' | 'Hashed' | 'Sealed';
+  hash: string;
+  sealedAt?: string;
+  payload: any;
+  chain: string[];
+}
+
+export interface RemediationActionLog {
+  id: string;
+  incidentId: string;
+  ruleName: string;
+  actionType: string;
+  target: string;
+  timestamp: string;
+  status: 'success' | 'failed' | 'rolled_back' | 'skipped';
+  resultDetails: any;
+  rollbackInfo: any;
+}
+
+export interface SelfProtectionAuditEntry {
+  id: string;
+  timestamp: string;
+  process: string;
+  pid?: number;
+  src_ip: string;
+  dst_ip: string;
+  reason: string;
+  status: string;
+  incidentCreated: boolean;
+  remediationExecuted: boolean;
+}
+
+export interface BlockedIPDetail {
+  ip: string;
+  blocked_at: string;
+  reason: string;
+  action_id: string;
+  incident_id: string;
+  status: string;
+}
+
 export interface BackendSnapshot {
   timestamp: string;
   metrics: RealMetrics;
@@ -171,6 +237,14 @@ export interface BackendSnapshot {
   devices: ArpDevice[];
   listening_ports: { port: number; ip: string; process: string; pid: number }[];
   network_traffic: RealNetworkPacket[];
+  behavior_state?: any;
+  incidents?: CorrelatedIncident[];
+  evidence_vault?: ForensicEvidencePackage[];
+  remediation_history?: RemediationActionLog[];
+  blocked_ips?: string[];
+  blocked_ip_details?: BlockedIPDetail[];
+  rule_catalog?: any[];
+  self_protection_audit?: SelfProtectionAuditEntry[];
 }
 
 // ── REST helpers ──────────────────────────────────────────────────────────────
@@ -434,6 +508,46 @@ export async function deleteRule(ruleId: string): Promise<{ status: string }> {
 
 export async function triggerRule(ruleId: string): Promise<AutomationRule> {
   const res = await authFetch(`${BACKEND_URL}/api/rules/${ruleId}/trigger`, {
+    method: 'POST',
+  });
+  return res.json();
+}
+
+export async function fetchConfig(): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/config`);
+  return res.json();
+}
+
+export async function updateConfig(patch: any): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return res.json();
+}
+
+export async function rollbackAction(actionId: string): Promise<RemediationActionLog> {
+  const res = await authFetch(`${BACKEND_URL}/api/remediation/${actionId}/rollback`, {
+    method: 'POST',
+  });
+  return res.json();
+}
+
+export async function fetchBehaviorAnalytics(): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/behavior-analytics`);
+  return res.json();
+}
+
+export async function unblockIp(ip: string): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/remediation/unblock/${encodeURIComponent(ip)}`, {
+    method: 'POST',
+  });
+  return res.json();
+}
+
+export async function clearHistory(): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/remediation/clear-history`, {
     method: 'POST',
   });
   return res.json();

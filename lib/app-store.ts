@@ -36,10 +36,20 @@ import {
   deleteRule as apiDeleteRule,
   triggerRule as apiTriggerRule,
   RealNetworkPacket,
+  CorrelatedIncident,
+  ForensicEvidencePackage,
+  RemediationActionLog,
+  SelfProtectionAuditEntry,
+  BlockedIPDetail,
+  unblockIp as apiUnblockIp,
+  clearHistory as apiClearHistory,
+  rollbackAction as apiRollbackAction,
+  fetchConfig,
+  updateConfig as apiUpdateConfig,
 } from './api-client';
 
 // ── Re-export types so pages don't need to change their imports ──────────────
-export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics, RbacUser, AutomationRule, RealNetworkPacket };
+export type { RealAlert as Alert, RealLogEntry as LogEntry, NetworkConnection, RealProcess, RealMetrics, RbacUser, AutomationRule, RealNetworkPacket, CorrelatedIncident, ForensicEvidencePackage, RemediationActionLog, SelfProtectionAuditEntry, BlockedIPDetail };
 
 // Kept for compatibility with escalation flow
 export interface Incident {
@@ -123,9 +133,22 @@ interface AppState {
   accessToken: string | null;
   setupRequired: boolean;
 
+  // EDR/XDR Pipeline state
+  correlatedIncidents: CorrelatedIncident[];
+  evidenceVault: ForensicEvidencePackage[];
+  remediationHistory: RemediationActionLog[];
+  blockedIps: string[];
+  blockedIpDetails: BlockedIPDetail[];
+  ruleCatalog: any[];
+  behaviorState: any;
+  selfProtectionAudit: SelfProtectionAuditEntry[];
+
   // Actions
   connectBackend: () => void;
   disconnectBackend: () => void;
+  rollbackRemediationAction: (actionId: string) => Promise<void>;
+  unblockIpAction: (ip: string) => Promise<void>;
+  clearHistoryAction: () => Promise<void>;
 
   acknowledgeAlert: (id: string) => void;
   resolveAlert: (id: string) => void;
@@ -187,6 +210,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   listeningPorts: [],
   networkTrafficLogs: [],
   notifications: [],
+  correlatedIncidents: [],
+  evidenceVault: [],
+  remediationHistory: [],
+  blockedIps: [],
+  blockedIpDetails: [],
+  ruleCatalog: [],
+  behaviorState: null,
+  selfProtectionAudit: [],
 
   currentUser: null,
   accessToken: null,
@@ -377,7 +408,65 @@ export const useAppStore = create<AppState>((set, get) => ({
       listeningPorts: snapshot.listening_ports,
       networkTrafficLogs: nextTrafficLogs,
       notifications: [...newNotifs, ...state.notifications].slice(0, 30),
+      correlatedIncidents: snapshot.incidents || state.correlatedIncidents,
+      evidenceVault: snapshot.evidence_vault || state.evidenceVault,
+      remediationHistory: snapshot.remediation_history || state.remediationHistory,
+      blockedIps: snapshot.blocked_ips || state.blockedIps,
+      blockedIpDetails: snapshot.blocked_ip_details || state.blockedIpDetails,
+      ruleCatalog: snapshot.rule_catalog || state.ruleCatalog,
+      behaviorState: snapshot.behavior_state || state.behaviorState,
+      selfProtectionAudit: snapshot.self_protection_audit || state.selfProtectionAudit,
     });
+  },
+
+  rollbackRemediationAction: async (actionId: string) => {
+    try {
+      const updatedLog = await apiRollbackAction(actionId);
+      set((state) => ({
+        remediationHistory: state.remediationHistory.map((item) =>
+          item.id === actionId ? { ...item, status: 'rolled_back' as const } : item
+        ),
+        blockedIps: state.blockedIps.filter((ip) => ip !== updatedLog.target),
+        blockedIpDetails: state.blockedIpDetails.map((item) =>
+          item.ip === updatedLog.target ? { ...item, status: 'rolled_back' } : item
+        ),
+      }));
+    } catch (err) {
+      console.error('Error rolling back action:', err);
+    }
+  },
+
+  unblockIpAction: async (ip: string) => {
+    try {
+      await apiUnblockIp(ip);
+      set((state) => ({
+        blockedIps: state.blockedIps.filter((item) => item !== ip),
+        blockedIpDetails: state.blockedIpDetails.map((item) =>
+          item.ip === ip ? { ...item, status: 'unblocked' } : item
+        ),
+        remediationHistory: state.remediationHistory.map((item) =>
+          item.target === ip ? { ...item, status: 'rolled_back' as const } : item
+        ),
+      }));
+    } catch (err) {
+      console.error('Error unblocking IP:', err);
+    }
+  },
+
+  clearHistoryAction: async () => {
+    try {
+      await apiClearHistory();
+      set({
+        remediationHistory: [],
+        blockedIps: [],
+        blockedIpDetails: [],
+        evidenceVault: [],
+        correlatedIncidents: [],
+        alerts: [],
+      });
+    } catch (err) {
+      console.error('Error clearing history:', err);
+    }
   },
 
   // ── Alert actions ───────────────────────────────────────────────────────────

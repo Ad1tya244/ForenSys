@@ -1414,12 +1414,12 @@ export default function ThreatHuntingPage() {
                 </div>
 
                 {isHunting ? (
-                  <div className="h-[400px] flex flex-col items-center justify-center space-y-4">
+                  <div className="h-100 flex flex-col items-center justify-center space-y-4">
                     <Loader2 className="w-10 h-10 text-accent animate-spin" />
                     <p className="text-xs font-mono text-accent animate-pulse">Running telemetry scanning loops...</p>
                   </div>
                 ) : graphData.nodes.length <= 1 ? (
-                  <div className="h-[400px] flex flex-col items-center justify-center p-6 text-center">
+                  <div className="h-100 flex flex-col items-center justify-center p-6 text-center">
                     <Target className="w-10 h-10 text-muted-foreground mb-3 animate-pulse" />
                     <p className="text-sm font-semibold text-foreground">No Correlation Hits Visualized</p>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm">
@@ -1428,7 +1428,7 @@ export default function ThreatHuntingPage() {
                   </div>
                 ) : (
                   <svg
-                    className={`w-full h-[400px] select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    className={`w-full h-100 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                     viewBox="0 0 700 400"
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}

@@ -20,7 +20,22 @@ const getSeverityColor = (severity: string) => {
 };
 
 export default function Dashboard() {
-  const { alerts, incidents, metrics, backendConnected, backendChecked } = useAppStore();
+  const {
+    alerts,
+    incidents,
+    metrics,
+    backendConnected,
+    backendChecked,
+    correlatedIncidents,
+    evidenceVault,
+    remediationHistory,
+    blockedIps,
+    blockedIpDetails,
+    behaviorState,
+    selfProtectionAudit,
+    rollbackRemediationAction,
+    unblockIpAction,
+  } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [alertTrend, setAlertTrend] = useState<Array<{ time: string; count: number; critical: number }>>([]);
 
@@ -275,35 +290,175 @@ export default function Dashboard() {
           </ScrollArea>
         </div>
 
-        {/* Open Incidents */}
+        {/* Open Incidents & Correlated EDR Sequences */}
         <div className="glass rounded-lg border border-border/50 overflow-hidden">
           <div className="p-3 border-b border-border/50 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Active Incidents</h2>
+            <h2 className="text-sm font-semibold text-foreground">Correlated EDR Intrusion Sequences</h2>
             <Link href="/dashboard/incidents">
               <Button variant="ghost" size="sm" className="h-6 text-xs text-accent hover:text-accent/80 gap-1">
-                Respond <ArrowRight className="w-3 h-3" />
+                View All ({correlatedIncidents.length}) <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
           </div>
           <div className="p-3 space-y-2">
-            {openIncidents.map((incident) => (
-              <div key={incident.id} className="p-3 bg-card/50 rounded border border-border/50 flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground text-xs truncate">{incident.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {incident.affectedSystems.length} systems · {incident.evidenceCount} evidence items
-                  </p>
+            {correlatedIncidents.slice(0, 4).map((inc, idx) => (
+              <div key={`${inc.id}-${idx}`} className="p-3 bg-card/50 rounded border border-border/50 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold text-accent">{inc.id}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Badge className="bg-purple-900/30 text-purple-300 border-purple-700/50 text-[10px]">
+                      Risk: {inc.riskScore}
+                    </Badge>
+                    <Badge className={`${getSeverityColor(inc.severity)} text-[10px]`}>
+                      {inc.severity.toUpperCase()}
+                    </Badge>
+                  </div>
                 </div>
-                <Badge className={`${getSeverityColor(incident.severity)} text-xs shrink-0`}>
-                  {incident.severity}
-                </Badge>
+                <p className="font-medium text-foreground text-xs">{inc.title}</p>
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/20">
+                  <span className="truncate">Kill Chain: {inc.mitreStages.join(' → ') || 'Correlated'}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-accent/80">
+                    {inc.evidenceIds?.length || 0} Sealed Bundles
+                  </span>
+                </div>
               </div>
             ))}
-            {openIncidents.length === 0 && (
-              <div className="py-12 text-center text-xs text-muted-foreground font-mono">[NO ESCALATED INCIDENTS]</div>
+            {correlatedIncidents.length === 0 && (
+              <div className="py-12 text-center text-xs text-muted-foreground font-mono">[NO CORRELATED INTRUSIONS DETECTED]</div>
             )}
           </div>
         </div>
+      </div>
+
+      {/* EDR SOAR Auto-Remediation & Sealed Forensic Vault Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* SOAR Auto-Remediation Execution & Rollback */}
+        <div className="glass rounded-lg border border-border/50 overflow-hidden">
+          <div className="p-3 border-b border-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-accent" />
+              <h2 className="text-sm font-semibold text-foreground">SOAR Remediation & Active Rollback</h2>
+            </div>
+            <Badge className="bg-accent/20 text-accent border-accent/50 text-xs">
+              {blockedIps.length} IPs Blocked
+            </Badge>
+          </div>
+          <ScrollArea className="h-56 w-full">
+            <div className="p-3 space-y-2">
+              {remediationHistory.slice(0, 8).map((log, idx) => (
+                <div key={`${log.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-border/40 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-accent font-bold text-[11px]">{log.id}</span>
+                      <span className="font-medium text-foreground">{log.actionType}</span>
+                      <Badge className={log.status === 'success' ? 'bg-green-900/30 text-green-300 text-[10px]' : log.status === 'rolled_back' ? 'bg-yellow-900/30 text-yellow-300 text-[10px]' : 'bg-red-900/30 text-red-300 text-[10px]'}>
+                        {log.status}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Target: <span className="font-mono text-foreground">{log.target}</span> ({log.ruleName})
+                    </p>
+                  </div>
+                  {log.status === 'success' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] border-amber-500/40 text-amber-400 hover:bg-amber-500/20 shrink-0"
+                      onClick={() => rollbackRemediationAction(log.id)}
+                    >
+                      Rollback
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {remediationHistory.length === 0 && (
+                <div className="py-12 text-center text-xs text-muted-foreground font-mono">
+                  [NO AUTOMATED REMEDIATION ACTIONS EXECUTED]
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* SHA-256 Sealed Forensic Vault */}
+        <div className="glass rounded-lg border border-border/50 overflow-hidden">
+          <div className="p-3 border-b border-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-purple-400" />
+              <h2 className="text-sm font-semibold text-foreground">SHA-256 Sealed Forensic Vault</h2>
+            </div>
+            <Badge className="bg-purple-900/30 text-purple-300 border-purple-700/50 text-xs">
+              {evidenceVault.length} Packages
+            </Badge>
+          </div>
+          <ScrollArea className="h-56 w-full">
+            <div className="p-3 space-y-2">
+              {evidenceVault.slice(0, 8).map((evd, idx) => (
+                <div key={`${evd.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-purple-500/20 space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-mono font-bold text-purple-300">{evd.id}</span>
+                    <Badge className="bg-green-900/30 text-green-300 text-[10px]">
+                      {evd.status}
+                    </Badge>
+                  </div>
+                  <p className="font-mono text-[10px] text-muted-foreground truncate">{evd.hash}</p>
+                  <div className="text-[10px] text-muted-foreground flex justify-between pt-1 border-t border-border/20">
+                    <span>Incident: {evd.incidentId}</span>
+                    <span>{evd.sealedAt || evd.timestamp}</span>
+                  </div>
+                </div>
+              ))}
+              {evidenceVault.length === 0 && (
+                <div className="py-12 text-center text-xs text-muted-foreground font-mono">
+                  [FORENSIC EVIDENCE VAULT EMPTY]
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      </div>
+
+      {/* Self-Protection Audit Log Section */}
+      <div className="glass rounded-lg border border-emerald-500/30 overflow-hidden">
+        <div className="p-3 border-b border-emerald-500/30 flex items-center justify-between bg-emerald-950/20">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-sm font-semibold text-foreground">Self-Protection Audit Log (Trusted Internal Activity)</h2>
+          </div>
+          <Badge className="bg-emerald-900/30 text-emerald-300 border-emerald-700/50 text-xs">
+            Self-Protection Layer Active ({selfProtectionAudit.length})
+          </Badge>
+        </div>
+        <ScrollArea className="h-44 w-full">
+          <div className="p-3 space-y-1.5 font-mono text-xs">
+            {selfProtectionAudit.slice(0, 10).map((audit, idx) => (
+              <div key={`${audit.id}-${idx}`} className="p-2 bg-black/40 rounded border border-emerald-500/20 flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400 font-bold text-[11px]">{audit.id}</span>
+                    <span className="text-foreground">{audit.process}</span>
+                    {audit.pid && <span className="text-muted-foreground text-[10px]">(PID: {audit.pid})</span>}
+                    <Badge className="bg-blue-950/50 text-blue-300 border-blue-800/40 text-[10px]">
+                      Ignored (Trusted Internal Activity)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    Reason: <span className="text-emerald-300">{audit.reason}</span> ({audit.src_ip} → {audit.dst_ip})
+                  </p>
+                </div>
+                <div className="text-right shrink-0 space-y-0.5">
+                  <span className="text-[10px] text-emerald-400 font-semibold block">No Incident Created</span>
+                  <span className="text-[10px] text-muted-foreground block">No Remediation Executed</span>
+                </div>
+              </div>
+            ))}
+            {selfProtectionAudit.length === 0 && (
+              <div className="py-8 text-center text-xs text-muted-foreground font-mono">
+                [SELF-PROTECTION MODE MONITORING - NO IGNORED INTERNAL EVENTS]
+              </div>
+            )}
+          </div>
+        </ScrollArea>
       </div>
     </div>
   );

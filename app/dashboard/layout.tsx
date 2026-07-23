@@ -43,8 +43,8 @@ const navItems = [
   { href: '/dashboard/threat-intelligence', label: 'Network Intel', icon: Shield },
   { href: '/dashboard/incidents', label: 'Incidents', icon: FileText },
   { href: '/dashboard/forensics', label: 'Forensics', icon: Lock },
-  { href: '/dashboard/automation', label: 'Automation', icon: Zap },
-  { href: '/dashboard/playbooks', label: 'Playbooks', icon: BookOpen },
+  { href: '/dashboard/automation', label: 'Auto Remediation History', icon: Zap },
+  { href: '/dashboard/playbooks', label: 'Firewall Rules & Blocklist', icon: Shield },
   { href: '/dashboard/logs', label: 'Logs', icon: GitBranch },
   { href: '/dashboard/threat-hunting', label: 'Threat Hunt', icon: Target },
   { href: '/dashboard/architecture', label: 'Architecture', icon: Network },
@@ -374,7 +374,7 @@ export default function DashboardLayout({
                 <div className="py-1.5 px-1.5">
                   <DropdownMenuItem
                     onClick={() => router.push('/dashboard/settings')}
-                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-muted-foreground cursor-pointer text-xs transition-colors focus:bg-white/5 focus:text-foreground data-[highlighted]:bg-white/5 data-[highlighted]:text-foreground hover:bg-white/5 hover:text-foreground"
+                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-muted-foreground cursor-pointer text-xs transition-colors focus:bg-white/5 focus:text-foreground data-highlighted:bg-white/5 data-highlighted:text-foreground hover:bg-white/5 hover:text-foreground"
                   >
                     <div className="w-6 h-6 rounded-md bg-white/5 flex items-center justify-center shrink-0">
                       <User className="w-3.5 h-3.5" />
@@ -389,7 +389,7 @@ export default function DashboardLayout({
                 <div className="px-1.5 pb-1.5 border-t border-border/40 pt-1.5">
                   <DropdownMenuItem
                     onClick={logout}
-                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-red-400 cursor-pointer text-xs transition-colors focus:bg-red-500/10 focus:text-red-300 data-[highlighted]:bg-red-500/10 data-[highlighted]:text-red-300 hover:bg-red-500/10 hover:text-red-300"
+                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-red-400 cursor-pointer text-xs transition-colors focus:bg-red-500/10 focus:text-red-300 data-highlighted:bg-red-500/10 data-highlighted:text-red-300 hover:bg-red-500/10 hover:text-red-300"
                   >
                     <div className="w-6 h-6 rounded-md bg-red-500/10 flex items-center justify-center shrink-0">
                       <LogOut className="w-3.5 h-3.5" />

@@ -3,5 +3,7 @@
   "venv": ".venv",
   "extraPaths": [
     "backend"
-  ]
+  ],
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false
 }

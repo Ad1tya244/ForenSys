@@ -1,361 +1,179 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Zap, Plus, Play, Pause, Trash2, Check, AlertCircle } from 'lucide-react';
+import { Zap, Shield, RotateCcw, CheckCircle, AlertTriangle, Filter, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
-import { useAppStore, AutomationRule } from '@/lib/app-store';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAppStore } from '@/lib/app-store';
 
-const CATEGORY_COLORS: Record<string, string> = {
-  containment: 'bg-red-900/30 text-red-300 border-red-700/50',
-  notification: 'bg-blue-900/30 text-blue-300 border-blue-700/50',
-  enrichment: 'bg-purple-900/30 text-purple-300 border-purple-700/50',
-  ticketing: 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50',
-};
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: 'bg-red-900/30 text-red-300 border-red-700/50',
-  high: 'bg-orange-900/30 text-orange-300 border-orange-700/50',
-  medium: 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50',
-  any: 'bg-gray-900/30 text-gray-300 border-gray-700/50',
-};
-
-export default function AutomationPage() {
-  const rules = useAppStore((state) => state.rules);
-  const fetchRules = useAppStore((state) => state.fetchRules);
-  const saveRule = useAppStore((state) => state.saveRule);
-  const deleteRule = useAppStore((state) => state.deleteRule);
-  const triggerRule = useAppStore((state) => state.triggerRule);
-
-  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [newRule, setNewRule] = useState({
-    name: '',
-    description: '',
-    trigger: '',
-    action: '',
-    severity: 'any' as AutomationRule['severity'],
-    category: 'notification' as AutomationRule['category']
-  });
+export default function AutoRemediationHistoryPage() {
+  const { remediationHistory, rollbackRemediationAction, clearHistoryAction } = useAppStore();
   const [mounted, setMounted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     setMounted(true);
-    fetchRules();
-  }, [fetchRules]);
+  }, []);
 
-  const selectedRule = rules.find((r) => r.id === selectedRuleId) || null;
-  const filtered = rules.filter((r) => categoryFilter === 'all' || r.category === categoryFilter);
+  const filteredLogs = remediationHistory.filter((log) => {
+    const matchesSearch =
+      log.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      log.target.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      log.ruleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      log.incidentId.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || log.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
-  const toggleRule = async (id: string) => {
-    const rule = rules.find((r) => r.id === id);
-    if (!rule) return;
-    try {
-      const updated = { ...rule, enabled: !rule.enabled };
-      await saveRule(updated);
-      toast.info(`Rule "${rule.name}" ${updated.enabled ? 'enabled' : 'disabled'}`);
-    } catch (e) {
-      toast.error('Failed to toggle rule');
-    }
-  };
-
-  const removeRule = async (id: string) => {
-    try {
-      await deleteRule(id);
-      if (selectedRuleId === id) setSelectedRuleId(null);
-      toast.success('Rule deleted');
-    } catch (e) {
-      toast.error('Failed to delete rule');
-    }
-  };
-
-  const triggerRuleManually = async (rule: AutomationRule) => {
-    try {
-      await triggerRule(rule.id);
-      toast.success(`Rule triggered: ${rule.name}`, { description: rule.action });
-    } catch (e) {
-      toast.error('Failed to trigger rule');
-    }
-  };
-
-  const addRule = async () => {
-    if (!newRule.name || !newRule.trigger || !newRule.action) {
-      toast.error('Please fill in required fields');
-      return;
-    }
-    const rule: AutomationRule = {
-      id: Date.now().toString(),
-      ...newRule,
-      enabled: true,
-      lastFired: null,
-      firedCount: 0,
-    };
-    try {
-      await saveRule(rule);
-      setShowAddModal(false);
-      setNewRule({ name: '', description: '', trigger: '', action: '', severity: 'any', category: 'notification' });
-      toast.success('Automation rule created');
-    } catch (e) {
-      toast.error('Failed to create automation rule');
-    }
-  };
-
-  const stats = {
-    total: rules.length,
-    enabled: rules.filter((r) => r.enabled).length,
-    totalFired: rules.reduce((acc, r) => acc + r.firedCount, 0),
-  };
-
-  if (!mounted) return null;
+  const activeCount = remediationHistory.filter((l) => l.status === 'success').length;
+  const rolledBackCount = remediationHistory.filter((l) => l.status === 'rolled_back').length;
+  const skippedCount = remediationHistory.filter((l) => l.status === 'skipped').length;
 
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Zap className="w-6 h-6 text-accent" />
-            Automation Rules
+            Auto Remediation History
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">SOAR-style automated response rule engine</p>
+          <p className="text-muted-foreground text-sm">
+            Complete audit trail of automated EDR/SOAR containment actions and rollback statuses
+          </p>
         </div>
-        <Button
-          onClick={() => setShowAddModal(true)}
-          className="bg-accent hover:bg-accent/90 text-accent-foreground gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" /> New Rule
-        </Button>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Rules', value: stats.total, color: 'text-foreground' },
-          { label: 'Active Rules', value: stats.enabled, color: 'text-green-400' },
-          { label: 'Total Executions', value: stats.totalFired.toLocaleString(), color: 'text-accent' },
-        ].map((stat) => (
-          <div key={stat.label} className="glass rounded-lg p-3 border border-border/50">
-            <div className="text-xs text-muted-foreground mb-1">{stat.label}</div>
-            <div className={`text-2xl font-bold font-mono ${stat.color}`}>{stat.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Category Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {(['all', 'containment', 'notification', 'enrichment', 'ticketing'] as const).map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setCategoryFilter(cat)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.01] active:scale-[0.97] capitalize ${
-              categoryFilter === cat
-                ? 'bg-accent/20 text-accent border-accent/50'
-                : 'border border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
-            }`}
+        <div className="flex items-center gap-2 font-mono text-xs">
+          <Badge className="bg-green-950/60 text-green-300 border-green-700/50 px-3 py-1">
+            {activeCount} Active Actions
+          </Badge>
+          <Badge className="bg-yellow-950/60 text-yellow-300 border-yellow-700/50 px-3 py-1">
+            {rolledBackCount} Rolled Back
+          </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-red-500/40 text-red-400 hover:bg-red-500/20 gap-1 font-sans ml-2"
+            onClick={() => clearHistoryAction()}
           >
-            {cat}
-          </button>
-        ))}
+            <Trash2 className="w-3.5 h-3.5" /> Clear History
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Rules List */}
-        <div className="lg:col-span-3 space-y-2">
-          <AnimatePresence>
-            {filtered.map((rule, i) => (
-              <motion.div
-                key={rule.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ delay: i * 0.04 }}
-                onClick={() => setSelectedRuleId(selectedRuleId === rule.id ? null : rule.id)}
-                className={`glass rounded-lg p-4 border cursor-pointer transition-all ${
-                  selectedRuleId === rule.id
-                    ? 'border-accent bg-accent/5'
-                    : 'border-border/50 hover:border-border'
-                } ${!rule.enabled ? 'opacity-60' : ''}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <h3 className="text-sm font-semibold text-foreground">{rule.name}</h3>
-                      <Badge className={`text-xs ${CATEGORY_COLORS[rule.category]}`}>{rule.category}</Badge>
-                      <Badge className={`text-xs ${SEVERITY_COLORS[rule.severity]}`}>{rule.severity}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">{rule.description}</p>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <span className="text-accent font-medium">IF</span>
-                        <span className="font-mono">{rule.trigger}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <span className="text-green-400 font-medium">THEN</span>
-                        <span className="font-mono">{rule.action}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                      <span>Fired: <span className="text-foreground font-mono">{rule.firedCount}×</span></span>
-                      {rule.lastFired && (
-                        <span>Last: <span className="text-foreground">{new Date(rule.lastFired).toLocaleDateString()}</span></span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleRule(rule.id); }}
-                      className={`relative w-10 h-5 rounded-full transition-colors ${rule.enabled ? 'bg-accent' : 'bg-muted'}`}
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="glass p-4 rounded-lg border border-border/50">
+          <p className="text-xs text-muted-foreground">Total Executed Actions</p>
+          <p className="text-2xl font-bold text-foreground mt-1 font-mono">{remediationHistory.length}</p>
+        </div>
+        <div className="glass p-4 rounded-lg border border-green-500/30">
+          <p className="text-xs text-green-400">Successful Containments</p>
+          <p className="text-2xl font-bold text-green-300 mt-1 font-mono">{activeCount}</p>
+        </div>
+        <div className="glass p-4 rounded-lg border border-yellow-500/30">
+          <p className="text-xs text-yellow-400">Rolled Back Actions</p>
+          <p className="text-2xl font-bold text-yellow-300 mt-1 font-mono">{rolledBackCount}</p>
+        </div>
+        <div className="glass p-4 rounded-lg border border-blue-500/30">
+          <p className="text-xs text-blue-400">Self-Protection Safeguards</p>
+          <p className="text-2xl font-bold text-blue-300 mt-1 font-mono">{skippedCount}</p>
+        </div>
+      </div>
+
+      {/* Controls Bar */}
+      <div className="glass p-4 rounded-lg border border-border/50 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="relative flex-1 w-full">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+          <Input
+            placeholder="Search by action ID, target IP, rule name, or incident ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 bg-black/40 border-border/50 text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-black/60 border border-border/50 rounded px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-accent"
+          >
+            <option value="all">All Statuses</option>
+            <option value="success">Success</option>
+            <option value="rolled_back">Rolled Back</option>
+            <option value="skipped">Skipped (Self-Protection)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* History Table */}
+      <div className="glass rounded-lg border border-border/50 overflow-hidden">
+        <ScrollArea className="h-130 w-full">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border/50 bg-black/40 text-[11px] font-mono text-muted-foreground uppercase tracking-wider">
+                <th className="p-3">Action ID</th>
+                <th className="p-3">Action Type</th>
+                <th className="p-3">Target</th>
+                <th className="p-3">Incident ID</th>
+                <th className="p-3">Triggering Rule</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 text-right">Controls</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/20 font-mono text-xs">
+              {filteredLogs.map((log, idx) => (
+                <tr key={`${log.id}-${idx}`} className="hover:bg-white/5 transition-colors">
+                  <td className="p-3 font-bold text-accent">{log.id}</td>
+                  <td className="p-3">
+                    <Badge className="bg-purple-950/50 text-purple-300 border-purple-800/40 text-[10px]">
+                      {log.actionType}
+                    </Badge>
+                  </td>
+                  <td className="p-3 text-foreground font-semibold">{log.target}</td>
+                  <td className="p-3 text-muted-foreground">{log.incidentId}</td>
+                  <td className="p-3 text-muted-foreground truncate max-w-xs">{log.ruleName}</td>
+                  <td className="p-3">
+                    <Badge
+                      className={
+                        log.status === 'success'
+                          ? 'bg-green-900/30 text-green-300 border-green-700/50 text-[10px]'
+                          : log.status === 'rolled_back'
+                          ? 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50 text-[10px]'
+                          : 'bg-blue-900/30 text-blue-300 border-blue-700/50 text-[10px]'
+                      }
                     >
-                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${rule.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Rule Detail */}
-        <div className="lg:col-span-2">
-          {!selectedRule ? (
-            <div className="glass rounded-lg border border-border/50 p-8 text-center">
-              <Zap className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Select a rule to view details</p>
-            </div>
-          ) : (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={selectedRule.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="glass rounded-lg border border-border/50 p-5 space-y-4"
-              >
-                <div className="flex items-start justify-between">
-                  <h3 className="text-sm font-bold text-foreground">{selectedRule.name}</h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 p-1.5"
-                    onClick={() => removeRule(selectedRule.id)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-
-                <div className="flex gap-2 flex-wrap">
-                  <Badge className={CATEGORY_COLORS[selectedRule.category]}>{selectedRule.category}</Badge>
-                  <Badge className={SEVERITY_COLORS[selectedRule.severity]}>{selectedRule.severity}</Badge>
-                  <Badge className={selectedRule.enabled ? 'bg-green-900/30 text-green-300 border-green-700/50' : 'bg-muted/30 text-muted-foreground border-border/50'}>
-                    {selectedRule.enabled ? 'Active' : 'Disabled'}
-                  </Badge>
-                </div>
-
-                <p className="text-xs text-muted-foreground">{selectedRule.description}</p>
-
-                <div className="space-y-2">
-                  <div className="p-3 bg-accent/5 border border-accent/20 rounded">
-                    <p className="text-xs text-accent font-semibold mb-1">TRIGGER</p>
-                    <p className="text-xs font-mono text-foreground">{selectedRule.trigger}</p>
-                  </div>
-                  <div className="p-3 bg-green-900/10 border border-green-700/30 rounded">
-                    <p className="text-xs text-green-400 font-semibold mb-1">ACTION</p>
-                    <p className="text-xs font-mono text-foreground">{selectedRule.action}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 bg-card/50 rounded border border-border/50">
-                    <div className="text-muted-foreground mb-0.5">Total Executions</div>
-                    <div className="font-bold font-mono text-accent">{selectedRule.firedCount}</div>
-                  </div>
-                  <div className="p-2 bg-card/50 rounded border border-border/50">
-                    <div className="text-muted-foreground mb-0.5">Last Fired</div>
-                    <div className="font-bold text-foreground">
-                      {selectedRule.lastFired ? new Date(selectedRule.lastFired).toLocaleDateString() : 'Never'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Button
-                    onClick={() => triggerRuleManually(selectedRule)}
-                    disabled={!selectedRule.enabled}
-                    className="w-full bg-accent hover:bg-accent/90 text-accent-foreground gap-2 text-xs"
-                    size="sm"
-                  >
-                    <Play className="w-3.5 h-3.5" /> Trigger Manually
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => toggleRule(selectedRule.id)}
-                    className="w-full border-border/50 gap-2 text-xs"
-                    size="sm"
-                  >
-                    {selectedRule.enabled ? <><Pause className="w-3.5 h-3.5" /> Disable</> : <><Play className="w-3.5 h-3.5" /> Enable</>}
-                  </Button>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          )}
-        </div>
+                      {log.status.toUpperCase()}
+                    </Badge>
+                  </td>
+                  <td className="p-3 text-right">
+                    {log.status === 'success' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 gap-1"
+                        onClick={() => rollbackRemediationAction(log.id)}
+                      >
+                        <RotateCcw className="w-3 h-3" /> Rollback
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {filteredLogs.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-xs text-muted-foreground font-mono">
+                    [NO AUTO REMEDIATION ACTION LOGS FOUND]
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </ScrollArea>
       </div>
-
-      {/* Add Rule Modal */}
-      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="bg-card border-border/50" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle className="text-foreground">Create Automation Rule</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 mt-2">
-            {[
-              { label: 'Rule Name *', key: 'name' as const, placeholder: 'e.g. Block Suspicious IP' },
-              { label: 'Description', key: 'description' as const, placeholder: 'What this rule does...' },
-              { label: 'Trigger Condition *', key: 'trigger' as const, placeholder: 'e.g. Alert severity == CRITICAL' },
-              { label: 'Action *', key: 'action' as const, placeholder: 'e.g. POST to Slack webhook' },
-            ].map((field) => (
-              <div key={field.key}>
-                <label className="text-xs text-muted-foreground block mb-1">{field.label}</label>
-                <input
-                  type="text"
-                  value={newRule[field.key]}
-                  onChange={(e) => setNewRule((n) => ({ ...n, [field.key]: e.target.value }))}
-                  placeholder={field.placeholder}
-                  className="w-full bg-input border border-border/50 rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-accent/50"
-                />
-              </div>
-            ))}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Severity</label>
-                <select value={newRule.severity} onChange={(e) => setNewRule((n) => ({ ...n, severity: e.target.value as AutomationRule['severity'] }))}
-                  className="w-full bg-input border border-border/50 rounded-md px-2 py-2 text-sm text-foreground">
-                  {['any', 'medium', 'high', 'critical'].map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Category</label>
-                <select value={newRule.category} onChange={(e) => setNewRule((n) => ({ ...n, category: e.target.value as AutomationRule['category'] }))}
-                  className="w-full bg-input border border-border/50 rounded-md px-2 py-2 text-sm text-foreground">
-                  {['notification', 'containment', 'enrichment', 'ticketing'].map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <Button onClick={addRule} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-              Create Rule
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

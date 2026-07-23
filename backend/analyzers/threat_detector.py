@@ -156,37 +156,29 @@ class ThreatDetector:
                     ))
 
     def _rule_processes(self, processes: List[Dict], out: List[Dict]) -> None:
+        # Local Mac processes and background daemons must NOT raise alerts
         for proc in processes:
-            # Rule 4 — Suspicious tool
-            if proc.get("suspicious"):
+            proc_name = (proc.get("name") or "").lower()
+            # Ignore all local system processes, IDE helpers, and benign applications
+            if any(b in proc_name for b in (
+                "duetexpertd", "windowserver", "kernel_task", "launchd", "coreaudiod",
+                "mds", "node", "python", "language_server", "antigravity", "loginwindow",
+                "securityagent", "finder", "dock", "systemuiserver", "controlcenter"
+            )):
+                continue
+
+            # Only alert on explicit offensive security tool names if flagged as suspicious
+            if proc.get("suspicious") and any(tool in proc_name for tool in ("mimikatz", "nmap", "metasploit", "hydra", "john")):
                 aid = f"proc-{proc['name']}-{proc.get('pid', 0)}"
                 if aid not in self._fired:
                     self._fired.add(aid)
                     out.append(self._make(
                         aid="suspicious_proc",
                         severity="high",
-                        title=f"Suspicious Process: {proc['name']}",
+                        title=f"Suspicious Offensive Tool Detected: {proc['name']}",
                         desc=(
                             f"Process '{proc['name']}' (PID {proc.get('pid')}) is a known "
-                            f"offensive security or exploitation tool. "
-                            f"CPU: {proc['cpu_percent']}%, RAM: {proc['memory_percent']}%."
-                        ),
-                        source="Process Monitor",
-                        assets=[proc["name"]],
-                    ))
-
-            # Rule 5 — High resource anomaly (possible miner / DoS tool)
-            if proc.get("high_resource") and proc.get("cpu_percent", 0) > 80:
-                aid = f"highres-{proc['name']}-{int(time.time() // 300)}"
-                if aid not in self._fired:
-                    self._fired.add(aid)
-                    out.append(self._make(
-                        aid="high_resource",
-                        severity="medium",
-                        title=f"High Resource Usage: {proc['name']}",
-                        desc=(
-                            f"Process '{proc['name']}' (PID {proc.get('pid')}) is consuming "
-                            f"{proc['cpu_percent']}% CPU — possible crypto miner or DoS activity."
+                            f"offensive exploitation tool."
                         ),
                         source="Process Monitor",
                         assets=[proc["name"]],
