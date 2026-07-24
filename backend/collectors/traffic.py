@@ -14,12 +14,17 @@ import time
 import uuid
 from typing import Dict, List
 
-from scapy.all import sniff
-from scapy.layers.inet import IP, TCP, UDP, ICMP
 try:
-    from scapy.layers.inet6 import IPv6
+    from scapy.all import sniff  # type: ignore
+    from scapy.layers.inet import IP, TCP, UDP, ICMP  # type: ignore
 except ImportError:
-    IPv6 = None
+    sniff = None  # type: ignore
+    IP = TCP = UDP = ICMP = None  # type: ignore
+
+try:
+    from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest, ICMPv6EchoReply  # type: ignore
+except ImportError:
+    IPv6 = ICMPv6EchoRequest = ICMPv6EchoReply = None  # type: ignore
 
 from collectors.network import get_connections
 
@@ -58,6 +63,11 @@ def get_recent_traffic_packets() -> List[Dict]:
 
 def _sniffer_loop() -> None:
     """Tries to set up a BPF-based packet sniffer using Scapy; falls back to simulator on permission errors or inactivity."""
+    if not callable(sniff):
+        print("[traffic] Scapy packet capture unavailable. Launching live packet simulator fallback...")
+        _run_packet_simulator()
+        return
+
     try:
         print("[traffic] Attempting to establish Scapy BPF-based packet sniffer...")
         
@@ -149,13 +159,25 @@ def _process_scapy_packet(packet) -> None:
                 
         _add_packet("UDP", src_ip, src_port, dst_ip, dst_port, length, info)
         
-    elif packet.haslayer(ICMP):
+    elif ICMP is not None and packet.haslayer(ICMP):
         icmp_layer = packet[ICMP]
         info = f"Type={icmp_layer.type} Code={icmp_layer.code}"
         _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, info)
+    elif ICMPv6EchoRequest is not None and (packet.haslayer(ICMPv6EchoRequest) or packet.haslayer(ICMPv6EchoReply)):
+        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, f"ICMPv6 Echo Request/Reply")
+    elif "ICMP" in packet.summary():
+        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, f"ICMP: {packet.summary()}")
 
 def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str) -> None:
-    """Thread-safe append of packet to global deque."""
+    """Thread-safe append of packet to global deque (drops telemetry from blocked IPs)."""
+    try:
+        from pipeline.soar_engine import soar_engine
+        if src_ip in soar_engine.blocked_ips or dst_ip in soar_engine.blocked_ips:
+            # Ignore/drop packet telemetry from blocked IP
+            return
+    except Exception:
+        pass
+
     packet_log = {
         "id": f"PKT-{uuid.uuid4().hex[:8].upper()}",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

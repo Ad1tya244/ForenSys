@@ -60,13 +60,15 @@ class SettingsSaveModel(BaseModel):
 
 # SOAR Automation Rules
 class RuleSaveModel(BaseModel):
-    id: str
-    name: str = Field(..., min_length=1, max_length=200)
-    description: str
-    trigger: str = Field(..., min_length=1)
-    action: str = Field(..., min_length=1)
-    severity: str = Field(..., pattern="^(critical|high|medium|any)$")
-    enabled: bool
+    id: Optional[str] = "RULE-01"
+    name: Optional[str] = "Rule"
+    description: Optional[str] = ""
+    trigger: Optional[str] = "automatic"
+    action: Optional[str] = "block"
+    severity: Optional[str] = "high"
+    enabled: Optional[bool] = True
     lastFired: Optional[str] = None
-    firedCount: int
-    category: str = Field(..., pattern="^(containment|notification|enrichment|ticketing)$")
+    firedCount: Optional[int] = 0
+    category: Optional[str] = "containment"
+    threshold: Optional[int] = 20
+    time_window: Optional[str] = "10s"

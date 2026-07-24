@@ -117,7 +117,26 @@ class IncidentCorrelationEngine:
         return self.incidents
 
     def _create_incident(self, alerts: List[DetectionAlert], now: float) -> CorrelatedIncident:
-        inc_id = f"INC-{int(now * 1000) % 1000000:06d}"
+        # Determine semantic incident prefix based on alert rules & titles
+        titles = " ".join([a.title + " " + a.rule_name for a in alerts]).upper()
+        if "ICMP" in titles:
+            prefix = "ICMP"
+        elif "PORT SCAN" in titles or "SCAN" in titles:
+            prefix = "SCAN"
+        elif "AUTH" in titles or "BRUTE" in titles:
+            prefix = "AUTH"
+        elif "SHELL" in titles:
+            prefix = "SHELL"
+        elif "DNS" in titles or "BEACON" in titles:
+            prefix = "DNS"
+        elif "EXFIL" in titles:
+            prefix = "EXFIL"
+        else:
+            prefix = "SEC"
+
+        # Count existing incidents with same prefix
+        matching_count = sum(1 for inc in self.incidents if inc.id.startswith(prefix)) + 1
+        inc_id = f"{prefix}{matching_count:02d}"
         
         # Calculate risk score & collect assets
         risk_score = 0

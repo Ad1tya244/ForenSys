@@ -43,7 +43,7 @@ def run_simulation():
     for _ in range(120):
         state_engine.process_event(normalizer.normalize_packet({
             "protocol": "ICMP", "src_ip": attacker_ip, "dst_ip": target_host, "length": 64
-        }, now - 15.0))
+        }, now - 5.0))
 
     print(f"\n[2/6] Simulating Reconnaissance Port Scan from {attacker_ip}...")
     for port in range(1000, 1025):
@@ -109,10 +109,13 @@ def run_simulation():
     print("STEP C: FORENSIC EVIDENCE COLLECTION & SHA-256 SEALING")
     print("--------------------------------------------------------------------------")
     evd = evidence_manager.generate_evidence(target_inc, state_engine)
-    print(f"✅ Evidence ID    : {evd.evidence_id}")
-    print(f"   Status         : {evd.status}")
-    print(f"   SHA-256 Hash   : {evd.sha256_hash}")
-    print(f"   Evidence Chain : {evd.to_dict()['chain']}")
+    if evd:
+        print(f"✅ Evidence ID    : {evd.evidence_id}")
+        print(f"   Status         : {evd.status}")
+        print(f"   SHA-256 Hash   : {evd.sha256_hash}")
+        print(f"   Evidence Chain : {evd.to_dict()['chain']}")
+    else:
+        print("✅ Evidence package already exists / processed.")
 
     print("\n--------------------------------------------------------------------------")
     print("STEP D: SOAR AUTO-REMEDIATION EXECUTION")

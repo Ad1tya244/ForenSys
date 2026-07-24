@@ -34,7 +34,8 @@ class WindowStateSnapshot:
     auth_successes_by_src: Dict[str, int]
     dns_query_timestamps: Dict[Tuple[str, str], List[float]]
     active_listeners: Set[Tuple[str, int]]
-    process_chains: List[Tuple[str, str]]
+    process_chains: List[Tuple[str, str]] = field(default_factory=list)
+    first_seen_by_src: Dict[str, float] = field(default_factory=dict)
 
 class BehaviorStateEngine:
     def __init__(self, max_retention_sec: float = 300.0) -> None:
@@ -89,16 +90,30 @@ class BehaviorStateEngine:
         dns_queries: Dict[Tuple[str, str], List[float]] = defaultdict(list)
         listeners: Set[Tuple[str, int]] = set()
         chains: List[Tuple[str, str]] = []
+        first_seen_by_src: Dict[str, float] = {}
         matching_count = 0
 
         for ev in self.events:
             if ev.timestamp < cutoff or ev.is_trusted:
                 continue
             matching_count += 1
+            if ev.src_ip and ev.src_ip not in first_seen_by_src:
+                first_seen_by_src[ev.src_ip] = ev.timestamp
             
-            # ICMP Flood tracking
-            if ev.protocol == "ICMP" and ev.src_ip:
-                icmp_by_src[ev.src_ip] += ev.packet_count
+            # ICMP Flood tracking (only count Echo Requests from remote/attacking IPs, never local machine IP)
+            from pipeline.self_protection import asset_trust_manager
+            if (
+                ev.protocol == "ICMP" 
+                and ev.src_ip 
+                and ev.src_ip not in asset_trust_manager.local_ips 
+                and not ev.src_ip.startswith("127.")
+            ):
+                icmp_type = ev.details.get("icmp_type", 8)
+                info_str = str(ev.details.get("info", "")).lower()
+                # Type 8 is Echo Request. Type 0 is Echo Reply.
+                is_reply = ("type=0" in info_str) or ("echo reply" in info_str) or (icmp_type == 0)
+                if not is_reply:
+                    icmp_by_src[ev.src_ip] += ev.packet_count
 
             # SYN Flood tracking
             if ev.protocol == "TCP" and ev.src_ip and ev.details.get("flags") == "SYN":
@@ -150,7 +165,8 @@ class BehaviorStateEngine:
             auth_successes_by_src=dict(auth_succs),
             dns_query_timestamps=dict(dns_queries),
             active_listeners=listeners,
-            process_chains=chains
+            process_chains=chains,
+            first_seen_by_src=first_seen_by_src
         )
 
     def get_all_window_snapshots(self, now: Optional[float] = None) -> Dict[str, WindowStateSnapshot]:

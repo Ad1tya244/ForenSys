@@ -60,6 +60,9 @@ coverage.xml
 # ─── Environment & Secrets ───────────────────────────────────────────────────
 # Never commit credentials, API keys, or DB passwords
 .env
+.env*
+**/.env
+**/.env*
 .env.local
 .env.development
 .env.development.local
@@ -69,6 +72,16 @@ coverage.xml
 .env.production.local
 .env*.local
 backend/.env
+
+# Cryptographic Keys & Service Credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials*.json
+secrets*.json
+service_account*.json
 
 # ─── Database ────────────────────────────────────────────────────────────────
 # SQLite (if used locally for testing)
@@ -143,7 +156,7 @@ __v0_jsx-dev-runtime.ts
 tmp/
 temp/
 
-# ─── ForenSys Backend Flat-Files ─────────────────────────────────────────────
+# ─── ForenSys Backend Flat-Files & Telemetry Dumps ─────────────────────────────
 backend/users.json
 backend/settings.json
 backend/reports.json
@@ -154,4 +167,8 @@ backend/sim_vault.json
 backend/sim_remediation.json
 backend/scripts/sim_vault.json
 backend/scripts/sim_remediation.json
+backend/pcap/
+backend/evidence/
+*.pcap
+*.pcapng
 *.json.bak

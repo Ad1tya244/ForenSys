@@ -142,7 +142,7 @@ export default function Dashboard() {
     { label: 'Connections', value: String(metrics.connections_total), color: 'text-green-400', icon: TrendingUp, sub: 'Active TCP/UDP' },
     { label: 'Disk Space', value: `${metrics.disk_percent}%`, color: 'text-blue-400', icon: Clock, sub: 'Root Disk' },
     { label: 'Total Alerts', value: String(metrics.alerts_total), color: 'text-red-400', icon: AlertCircle, sub: 'Live Detections' },
-    { label: 'Blocklist Size', value: String(metrics.blocklist_size), color: 'text-purple-400', icon: Shield, sub: 'IP Threats' },
+    { label: 'Blocklist Size', value: String(blockedIps.length), color: 'text-purple-400', icon: Shield, sub: 'Blocked IPs' },
   ];
 
   return (
@@ -245,38 +245,41 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Live Alert Console */}
+      {/* Live Threat Telemetry & Detections Row */}
+      <div className="grid grid-cols-1 gap-4">
+        {/* Recent Threat Alerts Stream */}
         <div className="glass rounded-lg border border-border/50 overflow-hidden">
           <div className="p-3 border-b border-border/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-accent rounded-full animate-pulse" />
-              <h2 className="text-sm font-semibold text-foreground">Suspicious Activity Logs</h2>
-            </div>
+            <h2 className="text-sm font-semibold text-foreground">Recent Threat Alerts Stream</h2>
             <Link href="/dashboard/alerts">
               <Button variant="ghost" size="sm" className="h-6 text-xs text-accent hover:text-accent/80 gap-1">
-                Investigate <ArrowRight className="w-3 h-3" />
+                View All Security Alerts ({alerts.length}) <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
           </div>
-          <ScrollArea className="h-52 w-full [&_[data-slot=scroll-area-viewport]>div]:block!">
-            <div className="space-y-1.5 p-3 pr-5 w-full overflow-hidden">
-              <AnimatePresence>
-                {recentAlerts.map((alert) => (
+          <ScrollArea className="h-64 w-full">
+            <div className="p-3 space-y-2 font-mono text-xs">
+              <AnimatePresence mode="popLayout">
+                {recentAlerts.map((alert, idx) => (
                   <motion.div
                     key={alert.id}
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 20, opacity: 0 }}
-                    className={`w-full p-2.5 rounded border ${getSeverityColor(alert.severity)} flex items-start justify-between gap-2`}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 10 }}
+                    transition={{ delay: idx * 0.02 }}
+                    className={`p-2.5 rounded border flex items-center justify-between gap-3 ${getSeverityColor(alert.severity)}`}
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold truncate">{alert.title}</p>
-                      <p className="text-xs mt-0.5 opacity-70 truncate">{alert.description}</p>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold truncate text-foreground">{alert.title}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          Source: {alert.source} | {alert.timestamp}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-xs font-mono text-muted-foreground shrink-0">
-                      {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border border-current">
+                      {alert.severity}
                     </span>
                   </motion.div>
                 ))}
@@ -284,133 +287,6 @@ export default function Dashboard() {
               {recentAlerts.length === 0 && (
                 <div className="py-12 text-center text-xs text-muted-foreground font-mono">
                   [SYSTEM STATUS NOMINAL - NO THREATS DETECTED]
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Open Incidents & Correlated EDR Sequences */}
-        <div className="glass rounded-lg border border-border/50 overflow-hidden">
-          <div className="p-3 border-b border-border/50 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Correlated EDR Intrusion Sequences</h2>
-            <Link href="/dashboard/incidents">
-              <Button variant="ghost" size="sm" className="h-6 text-xs text-accent hover:text-accent/80 gap-1">
-                View All ({correlatedIncidents.length}) <ArrowRight className="w-3 h-3" />
-              </Button>
-            </Link>
-          </div>
-          <div className="p-3 space-y-2">
-            {correlatedIncidents.slice(0, 4).map((inc, idx) => (
-              <div key={`${inc.id}-${idx}`} className="p-3 bg-card/50 rounded border border-border/50 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-bold text-accent">{inc.id}</span>
-                  <div className="flex items-center gap-1.5">
-                    <Badge className="bg-purple-900/30 text-purple-300 border-purple-700/50 text-[10px]">
-                      Risk: {inc.riskScore}
-                    </Badge>
-                    <Badge className={`${getSeverityColor(inc.severity)} text-[10px]`}>
-                      {inc.severity.toUpperCase()}
-                    </Badge>
-                  </div>
-                </div>
-                <p className="font-medium text-foreground text-xs">{inc.title}</p>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/20">
-                  <span className="truncate">Kill Chain: {inc.mitreStages.join(' → ') || 'Correlated'}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-accent/80">
-                    {inc.evidenceIds?.length || 0} Sealed Bundles
-                  </span>
-                </div>
-              </div>
-            ))}
-            {correlatedIncidents.length === 0 && (
-              <div className="py-12 text-center text-xs text-muted-foreground font-mono">[NO CORRELATED INTRUSIONS DETECTED]</div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* EDR SOAR Auto-Remediation & Sealed Forensic Vault Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* SOAR Auto-Remediation Execution & Rollback */}
-        <div className="glass rounded-lg border border-border/50 overflow-hidden">
-          <div className="p-3 border-b border-border/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-accent" />
-              <h2 className="text-sm font-semibold text-foreground">SOAR Remediation & Active Rollback</h2>
-            </div>
-            <Badge className="bg-accent/20 text-accent border-accent/50 text-xs">
-              {blockedIps.length} IPs Blocked
-            </Badge>
-          </div>
-          <ScrollArea className="h-56 w-full">
-            <div className="p-3 space-y-2">
-              {remediationHistory.slice(0, 8).map((log, idx) => (
-                <div key={`${log.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-border/40 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-accent font-bold text-[11px]">{log.id}</span>
-                      <span className="font-medium text-foreground">{log.actionType}</span>
-                      <Badge className={log.status === 'success' ? 'bg-green-900/30 text-green-300 text-[10px]' : log.status === 'rolled_back' ? 'bg-yellow-900/30 text-yellow-300 text-[10px]' : 'bg-red-900/30 text-red-300 text-[10px]'}>
-                        {log.status}
-                      </Badge>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      Target: <span className="font-mono text-foreground">{log.target}</span> ({log.ruleName})
-                    </p>
-                  </div>
-                  {log.status === 'success' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-[10px] border-amber-500/40 text-amber-400 hover:bg-amber-500/20 shrink-0"
-                      onClick={() => rollbackRemediationAction(log.id)}
-                    >
-                      Rollback
-                    </Button>
-                  )}
-                </div>
-              ))}
-              {remediationHistory.length === 0 && (
-                <div className="py-12 text-center text-xs text-muted-foreground font-mono">
-                  [NO AUTOMATED REMEDIATION ACTIONS EXECUTED]
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* SHA-256 Sealed Forensic Vault */}
-        <div className="glass rounded-lg border border-border/50 overflow-hidden">
-          <div className="p-3 border-b border-border/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-accent" />
-              <h2 className="text-sm font-semibold text-foreground">SHA-256 Sealed Forensic Vault</h2>
-            </div>
-            <Badge className="bg-accent/15 text-accent border-accent/30 text-xs">
-              {evidenceVault.length} Packages
-            </Badge>
-          </div>
-          <ScrollArea className="h-56 w-full">
-            <div className="p-3 space-y-2">
-              {evidenceVault.slice(0, 8).map((evd, idx) => (
-                <div key={`${evd.id}-${idx}`} className="p-2.5 bg-black/40 rounded border border-border/30 space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono font-bold text-accent">{evd.id}</span>
-                    <Badge className="bg-green-950/40 text-green-400 border-green-800/50 text-[10px]">
-                      {evd.status}
-                    </Badge>
-                  </div>
-                  <p className="font-mono text-[10px] text-muted-foreground truncate">{evd.hash}</p>
-                  <div className="text-[10px] text-muted-foreground flex justify-between pt-1 border-t border-border/20">
-                    <span>Incident: {evd.incidentId}</span>
-                    <span>{evd.sealedAt || evd.timestamp}</span>
-                  </div>
-                </div>
-              ))}
-              {evidenceVault.length === 0 && (
-                <div className="py-12 text-center text-xs text-muted-foreground font-mono">
-                  [FORENSIC EVIDENCE VAULT EMPTY]
                 </div>
               )}
             </div>

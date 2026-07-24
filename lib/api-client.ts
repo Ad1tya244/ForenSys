@@ -4,7 +4,14 @@
  * Uses WebSocket for live streaming, REST for initial data load.
  */
 
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const getBackendHost = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    return window.location.hostname;
+  }
+  return 'localhost';
+};
+
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || `http://${getBackendHost()}:8000`;
 export const WS_URL = BACKEND_URL.replace('http', 'ws') + '/ws';
 
 // ── Token & Auth Management ──────────────────────────────────────────────────
@@ -32,7 +39,13 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
   }
 
   const mergedOptions = { ...options, headers };
-  let res = await fetch(url, mergedOptions);
+  let res: Response;
+  try {
+    res = await fetch(url, mergedOptions);
+  } catch (err) {
+    console.warn(`[API] Network error fetching ${url}:`, err);
+    throw new Error(`Unable to reach ForenSys API endpoint (${url}). Ensure backend server is running.`);
+  }
 
   // If unauthorized, attempt to refresh session
   if (res.status === 401 && !url.includes('/api/auth/login') && !url.includes('/api/auth/setup') && !url.includes('/api/auth/refresh')) {
@@ -43,13 +56,13 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
       });
 
       if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        if (data && data.access_token) {
-          accessToken = data.access_token;
-          headers.set('Authorization', `Bearer ${accessToken}`);
-          // Retry the request
-          res = await fetch(url, { ...options, headers });
-          return res;
+        const refreshData = await refreshRes.json();
+        setAccessToken(refreshData.access_token);
+        headers.set('Authorization', `Bearer ${refreshData.access_token}`);
+        return await fetch(url, { ...options, headers });
+      } else {
+        if (onAuthErrorCallback) {
+          onAuthErrorCallback();
         }
       }
     } catch (e) {
@@ -259,6 +272,16 @@ export async function fetchAlerts(): Promise<RealAlert[]> {
   return res.json();
 }
 
+export async function resolveAlertApi(id: string): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/alerts/${id}/resolve`, { method: 'POST' });
+  return res.json();
+}
+
+export async function acknowledgeAlertApi(id: string): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/alerts/${id}/acknowledge`, { method: 'POST' });
+  return res.json();
+}
+
 export async function fetchMetrics(): Promise<RealMetrics> {
   const res = await authFetch(`${BACKEND_URL}/api/metrics`);
   return res.json();
@@ -405,34 +428,70 @@ export interface AuthResponse {
 }
 
 export async function checkSetupRequired(): Promise<{ setup_required: boolean }> {
-  const res = await fetch(`${BACKEND_URL}/api/auth/setup-status`);
-  return res.json();
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/setup-status`);
+    if (!res.ok) return { setup_required: false };
+    return await res.json();
+  } catch (err) {
+    console.warn('[API] Could not check setup status:', err);
+    return { setup_required: false };
+  }
 }
 
 export async function bootstrapAdmin(name: string, email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/auth/setup`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password }),
-    credentials: 'include',
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/api/auth/setup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+      credentials: 'include',
+    });
+  } catch (err) {
+    throw new Error('Unable to connect to ForenSys API backend (port 8000). Ensure the backend process is running.');
+  }
   if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(errorData.detail || 'Failed to bootstrap administrator');
+    let detail = 'Failed to bootstrap administrator';
+    try {
+      const errorData = await res.json();
+      detail = errorData.detail || detail;
+    } catch (_) {}
+    throw new Error(detail);
   }
   return res.json();
 }
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-    credentials: 'include',
-  });
+  let res: Response | null = null;
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include',
+      });
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  if (!res) {
+    throw new Error('Unable to connect to ForenSys API backend (port 8000). Ensure backend is running.');
+  }
   if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(errorData.detail || 'Invalid credentials');
+    let detail = 'Invalid credentials';
+    try {
+      const errorData = await res.json();
+      detail = errorData.detail || detail;
+    } catch (_) {}
+    throw new Error(detail);
   }
   return res.json();
 }
@@ -534,8 +593,26 @@ export async function rollbackAction(actionId: string): Promise<RemediationActio
   return res.json();
 }
 
+export async function deleteEvidenceItem(id: string): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/evidence/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: 'Failed to delete evidence item' }));
+    throw new Error(errorData.detail || 'Failed to delete evidence item');
+  }
+  return res.json();
+}
+
 export async function fetchBehaviorAnalytics(): Promise<any> {
   const res = await authFetch(`${BACKEND_URL}/api/behavior-analytics`);
+  return res.json();
+}
+
+export async function blockIp(ip: string): Promise<any> {
+  const res = await authFetch(`${BACKEND_URL}/api/remediation/block/${encodeURIComponent(ip)}`, {
+    method: 'POST',
+  });
   return res.json();
 }
 

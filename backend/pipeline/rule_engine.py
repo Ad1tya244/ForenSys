@@ -53,18 +53,46 @@ class RuleEngine:
                 print(f"[RuleEngine] Error executing rule '{rule.name}': {e}")
         return alerts
 
-    def get_rule_catalog(self) -> List[Dict[str, Any]]:
-        """Returns metadata for all loaded rules."""
-        return [
-            {
+    def get_rule_catalog(self, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Returns metadata and current thresholds for all loaded rules."""
+        cfg = config if config is not None else {}
+        catalog = []
+        for i, r in enumerate(self.rules, 1):
+            rule_id = f"RULE-0{i}" if i < 10 else f"RULE-{i}"
+            name_lower = r.name.lower()
+            
+            threshold = 20
+            window_sec = 10.0
+            
+            if "icmp" in name_lower or rule_id == "RULE-01":
+                threshold = cfg.get("icmp_threshold", 20)
+                window_sec = cfg.get("icmp_window_sec", 10.0)
+            elif "port scan" in name_lower or "scan" in name_lower or rule_id == "RULE-02":
+                threshold = cfg.get("portscan_threshold", 20)
+                window_sec = cfg.get("portscan_window_sec", 15.0)
+            elif "syn" in name_lower or rule_id == "RULE-03":
+                threshold = cfg.get("syn_threshold", 50)
+                window_sec = cfg.get("syn_window_sec", 10.0)
+            elif "brute force" in name_lower or "auth" in name_lower or rule_id == "RULE-04":
+                threshold = cfg.get("auth_failure_limit", 3)
+                window_sec = cfg.get("auth_window_sec", 60.0)
+            elif "dns" in name_lower or rule_id == "RULE-05":
+                threshold = cfg.get("dns_beacon_min_queries", 5)
+                window_sec = cfg.get("dns_beacon_window_sec", 60.0)
+            elif "exfiltration" in name_lower or rule_id == "RULE-06":
+                threshold = cfg.get("data_exfiltration_bytes", 52428800)
+                window_sec = cfg.get("data_exfiltration_window_sec", 30.0)
+                
+            catalog.append({
+                "id": rule_id,
                 "name": r.name,
                 "description": r.description,
                 "datasource": r.datasource,
-                "time_window": r.time_window,
+                "time_window": f"{int(window_sec)}s",
+                "threshold": threshold,
                 "severity": r.severity,
                 "mitre_tactics": r.mitre_tactics,
                 "confidence": r.confidence,
                 "recommended_remediation": r.recommended_remediation,
-            }
-            for r in self.rules
-        ]
+            })
+        return catalog

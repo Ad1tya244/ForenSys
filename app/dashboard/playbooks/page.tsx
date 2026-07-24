@@ -9,9 +9,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAppStore } from '@/lib/app-store';
 
 export default function FirewallRulesPage() {
-  const { blockedIps, blockedIpDetails, unblockIpAction, ruleCatalog } = useAppStore();
+  const { blockedIps, blockedIpDetails, blockIpAction, unblockIpAction, ruleCatalog } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [manualIpInput, setManualIpInput] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -64,14 +65,35 @@ export default function FirewallRulesPage() {
             <Lock className="w-4 h-4 text-accent" />
             Active Perimeter IP Blocklist
           </h2>
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-            <Input
-              placeholder="Search blocked IP, reason, incident..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-black/40 border-border/50 text-xs"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Input
+                placeholder="Enter IP to block (e.g. 192.168.1.5)..."
+                value={manualIpInput}
+                onChange={(e) => setManualIpInput(e.target.value)}
+                className="bg-black/40 border-border/50 text-xs w-full sm:w-56"
+              />
+              <Button
+                size="sm"
+                onClick={async () => {
+                  if (!manualIpInput.trim()) return;
+                  await blockIpAction(manualIpInput.trim());
+                  setManualIpInput('');
+                }}
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold text-xs shrink-0"
+              >
+                Block IP
+              </Button>
+            </div>
+            <div className="relative w-full sm:w-60">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="Search blocked IP, reason..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-black/40 border-border/50 text-xs"
+              />
+            </div>
           </div>
         </div>
 
@@ -88,31 +110,42 @@ export default function FirewallRulesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/20">
-              {filteredBlocklist.map((item, idx) => (
-                <tr key={`${item.ip}-${idx}`} className="hover:bg-white/5 transition-colors">
-                  <td className="p-3 font-bold text-accent">{item.ip}</td>
-                  <td className="p-3">
-                    <Badge className={item.status === 'active' ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]' : 'bg-green-950/40 text-green-400 border-green-800/50 text-[10px]'}>
-                      {item.status.toUpperCase()}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-foreground">{item.reason}</td>
-                  <td className="p-3 text-muted-foreground">{item.incident_id || 'N/A'}</td>
-                  <td className="p-3 text-muted-foreground">{item.blocked_at}</td>
-                  <td className="p-3 text-right">
-                    {item.status === 'active' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 text-[10px] border-green-500/40 text-green-400 hover:bg-green-500/20 gap-1"
-                        onClick={() => unblockIpAction(item.ip)}
-                      >
-                        <RotateCcw className="w-3 h-3" /> Unblock / Rollback IP
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filteredBlocklist.map((item, idx) => {
+                const isBlocked = blockedIps.includes(item.ip) || item.status === 'active' || item.status === 'success';
+                return (
+                  <tr key={`${item.ip}-${idx}`} className="hover:bg-white/5 transition-colors">
+                    <td className="p-3 font-bold text-accent">{item.ip}</td>
+                    <td className="p-3">
+                      <Badge className={isBlocked ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]' : 'bg-emerald-950/40 text-emerald-400 border-emerald-800/50 text-[10px]'}>
+                        {isBlocked ? 'BLOCKED' : 'UNBLOCKED'}
+                      </Badge>
+                    </td>
+                    <td className="p-3 text-foreground">{item.reason}</td>
+                    <td className="p-3 text-muted-foreground">{item.incident_id || 'N/A'}</td>
+                    <td className="p-3 text-muted-foreground">{item.blocked_at}</td>
+                    <td className="p-3 text-right">
+                      {isBlocked ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[10px] border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 gap-1 cursor-pointer"
+                          onClick={() => unblockIpAction(item.ip)}
+                        >
+                          <RotateCcw className="w-3 h-3" /> Unblock IP
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="h-6 text-[10px] bg-red-600 hover:bg-red-500 text-white font-semibold gap-1 cursor-pointer"
+                          onClick={() => blockIpAction(item.ip)}
+                        >
+                          Block IP
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredBlocklist.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-xs text-muted-foreground font-mono">
@@ -123,37 +156,6 @@ export default function FirewallRulesPage() {
             </tbody>
           </table>
         </ScrollArea>
-      </div>
-
-      {/* Detection Rule Catalog */}
-      <div className="glass rounded-lg border border-border/50 p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Shield className="w-4 h-4 text-accent" />
-          Active EDR Detection Rule Catalog
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {ruleCatalog.map((rule, idx) => (
-            <div key={rule.id || idx} className="p-3 bg-black/40 rounded border border-border/30 space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-foreground">{rule.name}</span>
-                <Badge className={
-                  rule.severity === 'critical' || rule.severity === 'high'
-                    ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]'
-                    : rule.severity === 'medium'
-                    ? 'bg-yellow-950/40 text-yellow-400 border-yellow-800/50 text-[10px]'
-                    : 'bg-green-950/40 text-green-400 border-green-800/50 text-[10px]'
-                }>
-                  {rule.severity.toUpperCase()}
-                </Badge>
-              </div>
-              <p className="text-[11px] text-muted-foreground">{rule.description}</p>
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/20 font-mono">
-                <span>Window: {rule.window}</span>
-                <span>Remediation: {rule.remediation}</span>
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

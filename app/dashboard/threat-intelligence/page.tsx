@@ -83,11 +83,12 @@ interface IntelItem {
 }
 
 export default function NetworkIntelligencePage() {
-  const { alerts: rawAlerts, metrics, connections, networkTrafficLogs } = useAppStore();
+  const { alerts: rawAlerts, metrics, connections, networkTrafficLogs, blockedIps, blockedIpDetails, blockIpAction, unblockIpAction } = useAppStore();
   const alerts = rawAlerts.filter((a) => a.status !== 'resolved');
   const copilotStore = useCopilotStore();
 
   const [search, setSearch] = useState('');
+  const [manualIpInput, setManualIpInput] = useState('');
   const [isRegex, setIsRegex] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
@@ -183,15 +184,16 @@ export default function NetworkIntelligencePage() {
         const pidNum = conn.pid !== undefined && conn.pid !== null ? conn.pid : 'N/A';
         const isLan = conn.geo.country_code === 'LAN';
         const title = isLan ? `Local Connection: ${orgName}` : `Active Remote Peer Activity: ${orgName}`;
+        const isBlocked = blockedIps.includes(conn.remote_ip);
         list.push({
           id: `intel-conn-${conn.remote_ip}-${i}`,
-          type: 'campaign',
+          type: isBlocked ? 'ioc' : 'campaign',
           title: title,
-          severity: 'low',
+          severity: isBlocked ? 'high' : (isLan ? 'medium' : 'high'),
           description: `Established ${proto} connection to IP in ${cityName}, ${countryName}. Process: ${procName} (PID: ${pidNum}).`,
           indicators: [conn.remote_ip],
           lastSeen: new Date(),
-          confidence: 60,
+          confidence: isBlocked ? 90 : 75,
         });
       }
     });
@@ -672,7 +674,7 @@ export default function NetworkIntelligencePage() {
                       </p>
                     </div>
                   ) : (
-                    [...filteredTraffic].reverse().map((pkt) => {
+                    [...filteredTraffic].reverse().map((pkt, idx) => {
                       const protoColor = 
                         pkt.protocol === 'TCP' 
                           ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
@@ -682,7 +684,7 @@ export default function NetworkIntelligencePage() {
 
                       return (
                         <div
-                          key={pkt.id}
+                          key={`${pkt.id}-${idx}`}
                           className="grid grid-cols-[140px_80px_180px_30px_180px_90px_1fr] gap-3 px-4 py-2.5 items-center hover:bg-white/2 transition-colors"
                         >
                           {/* Timestamp */}

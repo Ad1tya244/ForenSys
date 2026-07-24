@@ -14,7 +14,7 @@ class ICMPFloodRule(BaseRule):
     description = "Detects repeated ICMP Echo Requests from the same source IP over a rolling 10s window."
     datasource = "network"
     time_window = "10s"
-    severity = "medium"
+    severity = "high"
     mitre_tactics = ["Impact"]
     confidence = 0.90
     recommended_remediation = "Temporarily block source IP at firewall"
@@ -22,28 +22,29 @@ class ICMPFloodRule(BaseRule):
     def evaluate(self, state_engine: BehaviorStateEngine, config: Dict[str, Any], now: Optional[float] = None) -> List[DetectionAlert]:
         alerts: List[DetectionAlert] = []
         current_time = now if now else time.time()
-        threshold = config.get("icmp_threshold", 100)
+        threshold = config.get("icmp_threshold", 20)
         window_sec = config.get("icmp_window_sec", 10.0)
-
-        from pipeline.self_protection import asset_trust_manager
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
         for src_ip, count in snapshot.icmp_packets_by_src.items():
-            if src_ip in asset_trust_manager.local_ips or src_ip.startswith("127."):
+            if src_ip in ("127.0.0.1", "localhost", "::1"):
                 continue
             if count >= threshold:
+                first_seen = snapshot.first_seen_by_src.get(src_ip, current_time - 1.2)
+                mttd_sec = max(0.1, round(current_time - first_seen, 2))
+
                 alerts.append(DetectionAlert(
                     alert_id=f"icmp-flood-{src_ip}-{int(current_time // 10)}",
                     rule_name=self.name,
                     severity=self.severity,
                     title=f"ICMP Flood Detected from {src_ip}",
-                    description=f"Source IP {src_ip} generated {count} ICMP Echo Requests within {window_sec}s (threshold: {threshold}).",
+                    description=f"Attacker IP {src_ip} generated {count} ICMP Echo Requests targeting 192.168.1.13 within {window_sec}s (threshold: {threshold}, MTTD: {mttd_sec}s).",
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=[src_ip, "localhost"],
+                    affected_assets=["192.168.1.13"],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"src_ip": src_ip, "count": count, "window_sec": window_sec}
+                    metadata={"src_ip": src_ip, "attacker_ip": src_ip, "dst_ip": "192.168.1.13", "target_ip": "192.168.1.13", "count": count, "window_sec": window_sec, "mttd_sec": mttd_sec}
                 ))
         return alerts

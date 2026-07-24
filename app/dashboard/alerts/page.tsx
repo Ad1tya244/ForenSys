@@ -30,19 +30,23 @@ export default function AlertsPage() {
   }, []);
 
   const filteredAlerts = alerts.filter((alert) => {
-    if (filter !== 'all' && filter !== alert.severity && filter !== alert.status) return false;
+    if (filter === 'resolved') return alert.status === 'resolved';
+    if (filter !== 'all' && filter !== alert.severity) return false;
     if (search && !alert.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   const severityCounts = {
-    critical: alerts.filter((a) => a.severity === 'critical').length,
-    high: alerts.filter((a) => a.severity === 'high').length,
-    medium: alerts.filter((a) => a.severity === 'medium').length,
-    low: alerts.filter((a) => a.severity === 'low').length,
+    critical: alerts.filter((a) => a.severity === 'critical' && a.status !== 'resolved').length,
+    high: alerts.filter((a) => a.severity === 'high' && a.status !== 'resolved').length,
+    medium: alerts.filter((a) => a.severity === 'medium' && a.status !== 'resolved').length,
+    low: alerts.filter((a) => a.severity === 'low' && a.status !== 'resolved').length,
   };
 
-  const getSeverityColor = (severity: string) => {
+  const getSeverityColor = (severity: string, status?: string) => {
+    if (status === 'resolved') {
+      return 'bg-card/40 border-border/30 opacity-70 text-muted-foreground';
+    }
     switch (severity) {
       case 'critical': return 'bg-red-900/30 text-red-300 border-red-700/50';
       case 'high': return 'bg-orange-900/30 text-orange-300 border-orange-700/50';
@@ -154,17 +158,17 @@ export default function AlertsPage() {
           </div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {['all', 'critical', 'high', 'medium', 'low', 'new', 'acknowledged', 'investigating', 'resolved'].map((f) => {
+          {['all', 'critical', 'high', 'medium', 'low', 'resolved'].map((f) => {
             const count = f === 'all'
               ? alerts.length
-              : ['critical', 'high', 'medium', 'low'].includes(f)
-              ? alerts.filter(a => a.severity === f).length
-              : alerts.filter(a => a.status === f).length;
+              : f === 'resolved'
+              ? alerts.filter(a => a.status === 'resolved').length
+              : alerts.filter(a => a.severity === f && a.status !== 'resolved').length;
             return (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`h-7 px-3 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.01] active:scale-[0.97] ${
+                className={`h-7 px-3 rounded-full text-xs font-medium border transition-all duration-200 cursor-pointer hover:scale-[1.01] active:scale-[0.97] ${
                   filter === f
                     ? 'bg-accent/20 text-accent border-accent/50'
                     : 'bg-transparent border border-border/50 text-muted-foreground hover:text-foreground hover:border-border'
@@ -197,7 +201,7 @@ export default function AlertsPage() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 20, opacity: 0 }}
                   transition={{ delay: Math.min(idx * 0.02, 0.3) }}
-                  className={`p-3 rounded border ${getSeverityColor(alert.severity)} cursor-pointer transition-all hover:brightness-110`}
+                  className={`p-3 rounded border ${getSeverityColor(alert.severity, alert.status)} cursor-pointer transition-all hover:brightness-110`}
                   onClick={() => setSelectedAlert(alert)}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -252,7 +256,7 @@ export default function AlertsPage() {
 
       {/* Alert Detail Sheet */}
       <Sheet open={!!selectedAlert} onOpenChange={(open) => !open && setSelectedAlert(null)}>
-        <SheetContent className="w-[480px] sm:w-[540px] bg-card border-border/50 overflow-y-auto p-6">
+        <SheetContent className="w-120 sm:w-135 bg-card border-border/50 overflow-y-auto p-6">
           {selectedAlert && (
             <>
               <SheetHeader className="space-y-3 p-0">

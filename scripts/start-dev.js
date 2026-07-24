@@ -34,16 +34,39 @@ backend.on('error', (err) => {
   console.error('[ForenSys Launcher] Failed to start Python backend:', err);
 });
 
-// Start Next.js Frontend
-console.log('[ForenSys Launcher] Starting Next.js frontend dev server...');
-const frontend = spawn('npx', ['next', 'dev'], {
-  stdio: 'inherit',
-  env: process.env,
-  shell: true,
-});
+const http = require('http');
 
-frontend.on('error', (err) => {
-  console.error('[ForenSys Launcher] Failed to start Next.js frontend:', err);
+let frontend = null;
+
+function waitForBackend(callback) {
+  const check = () => {
+    const req = http.get('http://127.0.0.1:8000/api/health', (res) => {
+      if (res.statusCode === 200) {
+        callback();
+      } else {
+        setTimeout(check, 150);
+      }
+    });
+    req.on('error', () => {
+      setTimeout(check, 150);
+    });
+    req.end();
+  };
+  check();
+}
+
+console.log('[ForenSys Launcher] Waiting for Python backend on port 8000 to be ready...');
+waitForBackend(() => {
+  console.log('\x1b[32m%s\x1b[0m', '[ForenSys Launcher] ✅ Python backend is live on http://127.0.0.1:8000! Starting Next.js frontend...');
+  frontend = spawn('npx', ['next', 'dev'], {
+    stdio: 'inherit',
+    env: process.env,
+    shell: true,
+  });
+
+  frontend.on('error', (err) => {
+    console.error('[ForenSys Launcher] Failed to start Next.js frontend:', err);
+  });
 });
 
 // Cleanup function to terminate both child processes

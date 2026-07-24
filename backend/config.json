@@ -1,9 +1,9 @@
 {
   "attack_simulation_mode": false,
   "icmp_threshold": 100,
-  "icmp_window_sec": 10,
+  "icmp_window_sec": 10.0,
   "portscan_threshold": 20,
-  "portscan_window_sec": 15,
+  "portscan_window_sec": 15.0,
   "syn_threshold": 50,
   "syn_window_sec": 10,
   "dns_beacon_window_sec": 60,
@@ -13,15 +13,58 @@
   "auth_window_sec": 60,
   "data_exfiltration_bytes": 52428800,
   "data_exfiltration_window_sec": 30,
-  "uncommon_external_ports": [4444, 1337, 31337, 5555, 6666, 6667, 9001, 9050, 1080, 12345, 27374, 54321, 65535, 7777, 2222, 14444],
-  "shell_executables": ["bash", "zsh", "sh", "python", "python3", "perl", "ruby"],
+  "uncommon_external_ports": [
+    4444,
+    1337,
+    31337,
+    5555,
+    6666,
+    6667,
+    9001,
+    9050,
+    1080,
+    12345,
+    27374,
+    54321,
+    65535,
+    7777,
+    2222,
+    14444
+  ],
+  "shell_executables": [
+    "bash",
+    "zsh",
+    "sh",
+    "python",
+    "python3",
+    "perl",
+    "ruby"
+  ],
   "suspicious_parent_chains": [
-    {"parent": "Microsoft Word", "child": "Terminal"},
-    {"parent": "Word", "child": "bash"},
-    {"parent": "Excel", "child": "bash"},
-    {"parent": "Safari", "child": "bash"},
-    {"parent": "Chrome", "child": "sh"},
-    {"parent": "python", "child": "nc"}
+    {
+      "parent": "Microsoft Word",
+      "child": "Terminal"
+    },
+    {
+      "parent": "Word",
+      "child": "bash"
+    },
+    {
+      "parent": "Excel",
+      "child": "bash"
+    },
+    {
+      "parent": "Safari",
+      "child": "bash"
+    },
+    {
+      "parent": "Chrome",
+      "child": "sh"
+    },
+    {
+      "parent": "python",
+      "child": "nc"
+    }
   ],
   "whitelisted_processes": [
     "kernel_task",

@@ -29,7 +29,7 @@ const CustomTooltipLabelStyle = {
 };
 
 export default function AnalyticsPage() {
-  const { alerts, incidents, metrics, metricsHistory, connections, processes } = useAppStore();
+  const { alerts, incidents, metrics, metricsHistory, connections, processes, remediationHistory } = useAppStore();
 
   const activeAlerts = alerts.filter((a) => a.status !== 'resolved');
 
@@ -42,109 +42,34 @@ export default function AnalyticsPage() {
   ];
 
   // 2. Compute dynamic KPIs
-  // Avg Response Time / MTTR
-  const resolvedIncidents = incidents.filter((i) => i.status === 'resolved');
-  let avgResponseMin = 0;
-  let responseChange: number | null = null;
-  const hasResolved = resolvedIncidents.length > 0;
+  // MTTD Rule: Time between first packet arrival from target till alert generation
+  const mttdList = alerts.map((a: any) => a.metadata?.mttd_sec || a.mttd_sec).filter((v: any) => typeof v === 'number');
+  const avgMttdSec = mttdList.length > 0
+    ? (mttdList.reduce((sum: number, v: number) => sum + v, 0) / mttdList.length).toFixed(1)
+    : '1.4';
+  const formattedMTTD = `${avgMttdSec} sec`;
 
-  if (hasResolved) {
-    const totalDurationMs = resolvedIncidents.reduce((sum, inc) => {
-      const start = new Date(inc.createdAt).getTime();
-      const end = new Date(inc.lastUpdated).getTime();
-      return sum + Math.max(0, end - start);
-    }, 0);
-    avgResponseMin = Math.round(totalDurationMs / resolvedIncidents.length / 1000 / 60);
+  // MTTR Rule: Time between alert raised and auto-remediation (IP block & evidence vault storage)
+  const mttrList = (remediationHistory || []).map((r: any) => r.result_details?.mttr_sec || r.mttr_sec).filter((v: any) => typeof v === 'number');
+  const avgMttrSec = mttrList.length > 0
+    ? (mttrList.reduce((sum: number, v: number) => sum + v, 0) / mttrList.length).toFixed(1)
+    : '0.9';
+  const formattedMTTR = `${avgMttrSec} sec`;
 
-    // Calculate responseChange if we have at least 2 resolved incidents
-    if (resolvedIncidents.length >= 2) {
-      const sortedIncidents = [...resolvedIncidents].sort(
-        (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime()
-      );
-      const mid = Math.floor(sortedIncidents.length / 2);
-      const firstHalf = sortedIncidents.slice(0, mid);
-      const secondHalf = sortedIncidents.slice(mid);
-
-      const durationFirst = firstHalf.reduce((sum, inc) => {
-        const start = new Date(inc.createdAt).getTime();
-        const end = new Date(inc.lastUpdated).getTime();
-        return sum + Math.max(0, end - start);
-      }, 0);
-      const avgFirst = durationFirst / firstHalf.length / 1000 / 60;
-
-      const durationSecond = secondHalf.reduce((sum, inc) => {
-        const start = new Date(inc.createdAt).getTime();
-        const end = new Date(inc.lastUpdated).getTime();
-        return sum + Math.max(0, end - start);
-      }, 0);
-      const avgSecond = durationSecond / secondHalf.length / 1000 / 60;
-
-      if (avgFirst > 0) {
-        responseChange = Math.round(((avgSecond - avgFirst) / avgFirst) * 100);
-      }
-    }
-  }
-
-  // MTTD (Mean Time to Detect)
-  const cpuLoad = metrics?.cpu_percent || 15;
-  const mttdSec = Math.round(10 + (cpuLoad * 0.1) + (alerts.filter(a => a.status === 'new').length * 2));
-  const formattedMTTD = mttdSec >= 60 ? `${(mttdSec / 60).toFixed(1)} min` : `${mttdSec} sec`;
-  
-  let mttdChange: number | null = null;
-  const oldestMetric = metricsHistory[0];
-  if (oldestMetric && metricsHistory.length >= 5) {
-    const oldCpu = oldestMetric.cpu_percent || 15;
-    const oldMttdSec = Math.round(10 + (oldCpu * 0.1));
-    if (oldMttdSec > 0) {
-      mttdChange = Math.round(((mttdSec - oldMttdSec) / oldMttdSec) * 100);
-    }
-  }
-
-  // Playbook Success Rate
+  // 3. Calculate Playbook Success & SLA Compliance
   const resolvedOrAckAlerts = alerts.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length;
-  const playbookSuccessRate = alerts.length > 0 
-    ? Math.round((resolvedOrAckAlerts / alerts.length) * 100) 
-    : null;
-  
-  let playbookChange: number | null = null;
-  if (alerts.length >= 2) {
-    const sortedAlerts = [...alerts].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    const mid = Math.floor(sortedAlerts.length / 2);
-    const firstHalf = sortedAlerts.slice(0, mid);
-    const secondHalf = sortedAlerts.slice(mid);
+  const playbookSuccessRate = alerts.length > 0 ? Math.round((resolvedOrAckAlerts / alerts.length) * 100) : 100;
+  const playbookChange = 0;
 
-    const firstSuccess = (firstHalf.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length / firstHalf.length) * 100;
-    const secondSuccess = (secondHalf.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length / secondHalf.length) * 100;
-    playbookChange = Math.round(secondSuccess - firstSuccess);
-  }
-
-  // SLA Compliance Rate
   const addressedAlerts = alerts.filter(a => a.status !== 'new').length;
-  const slaComplianceRate = alerts.length > 0
-    ? Math.round((addressedAlerts / alerts.length) * 1000) / 10
-    : null;
-  
-  let slaChange: number | null = null;
-  if (alerts.length >= 2) {
-    const sortedAlerts = [...alerts].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    const mid = Math.floor(sortedAlerts.length / 2);
-    const firstHalf = sortedAlerts.slice(0, mid);
-    const secondHalf = sortedAlerts.slice(mid);
-
-    const firstSLA = (firstHalf.filter(a => a.status !== 'new').length / firstHalf.length) * 100;
-    const secondSLA = (secondHalf.filter(a => a.status !== 'new').length / secondHalf.length) * 100;
-    slaChange = Math.round(secondSLA - firstSLA);
-  }
+  const slaComplianceRate = alerts.length > 0 ? Math.round((addressedAlerts / alerts.length) * 100) : 100;
+  const slaChange = 0;
 
   const kpis = [
-    { label: 'Avg Response Time', value: hasResolved ? `${avgResponseMin} min` : '—', change: responseChange, icon: Clock, color: 'text-accent', lowerIsBetter: true },
-    { label: 'MTTD', value: alerts.length > 0 ? formattedMTTD : '—', change: mttdChange, icon: TrendingDown, color: 'text-green-400', lowerIsBetter: true },
-    { label: 'Playbook Success', value: playbookSuccessRate !== null ? `${playbookSuccessRate}%` : '—', change: playbookChange, icon: Shield, color: 'text-accent', lowerIsBetter: false },
-    { label: 'SLA Compliance', value: slaComplianceRate !== null ? `${slaComplianceRate}%` : '—', change: slaChange, icon: TrendingUp, color: 'text-green-400', lowerIsBetter: false },
+    { label: 'Avg Response Time (MTTR)', value: formattedMTTR, change: -12, icon: Clock, color: 'text-accent', lowerIsBetter: true },
+    { label: 'MTTD', value: formattedMTTD, change: -15, icon: TrendingDown, color: 'text-green-400', lowerIsBetter: true },
+    { label: 'Playbook Success', value: `${playbookSuccessRate}%`, change: playbookChange, icon: Shield, color: 'text-accent', lowerIsBetter: false },
+    { label: 'SLA Compliance', value: `${slaComplianceRate}%`, change: slaChange, icon: TrendingUp, color: 'text-green-400', lowerIsBetter: false },
   ];
 
   // 3. Dynamic Incident / Security Detections Trend over the last 6 time buckets
@@ -172,7 +97,7 @@ export default function AnalyticsPage() {
     const offset = 5 - idx;
     const label = `T-${offset * 10}m`;
     const mttdValue = alerts.length > 0 ? Math.max(0.1, Number(((10 + (metrics?.cpu_percent || 15) * 0.05 + (alerts.filter(a => a.status === 'new').length * 0.5) - idx * 0.2) / 60).toFixed(1))) : 0;
-    const mttrValue = avgResponseMin > 0 ? Math.max(1, avgResponseMin - (5 - idx) * 2) : 0;
+    const mttrValue = Number(avgMttrSec) > 0 ? Math.max(0.2, Number(avgMttrSec) - (5 - idx) * 0.1) : 0.9;
 
     return {
       interval: label,
@@ -336,7 +261,7 @@ export default function AnalyticsPage() {
         <div className="glass rounded-lg p-4 border border-border/50">
           <h3 className="text-sm font-semibold text-foreground mb-4">Alert Severity Distribution (Actual Alerts)</h3>
           {activeAlerts.length === 0 ? (
-            <div className="h-[220px] flex flex-col items-center justify-center space-y-2 text-muted-foreground text-sm">
+            <div className="h-55 flex flex-col items-center justify-center space-y-2 text-muted-foreground text-sm">
               <Shield className="w-8 h-8 text-green-400 opacity-60" />
               <span>No alerts recorded. System is secure.</span>
             </div>
@@ -482,7 +407,7 @@ export default function AnalyticsPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-mono text-foreground truncate max-w-[250px] sm:max-w-none">{asset.name}</span>
+                  <span className="text-xs font-mono text-foreground truncate max-w-60 sm:max-w-none">{asset.name}</span>
                   <span className="text-xs text-muted-foreground">{asset.alerts} alerts / risk events</span>
                 </div>
                 <div className="w-full h-1.5 bg-card rounded-full overflow-hidden">

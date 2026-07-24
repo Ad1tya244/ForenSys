@@ -41,9 +41,13 @@ import {
   RemediationActionLog,
   SelfProtectionAuditEntry,
   BlockedIPDetail,
+  blockIp as apiBlockIp,
   unblockIp as apiUnblockIp,
   clearHistory as apiClearHistory,
   rollbackAction as apiRollbackAction,
+  deleteEvidenceItem as apiDeleteEvidenceItem,
+  resolveAlertApi,
+  acknowledgeAlertApi,
   fetchConfig,
   updateConfig as apiUpdateConfig,
 } from './api-client';
@@ -147,8 +151,10 @@ interface AppState {
   connectBackend: () => void;
   disconnectBackend: () => void;
   rollbackRemediationAction: (actionId: string) => Promise<void>;
+  blockIpAction: (ip: string) => Promise<void>;
   unblockIpAction: (ip: string) => Promise<void>;
   clearHistoryAction: () => Promise<void>;
+  deleteEvidenceItemAction: (id: string) => Promise<void>;
 
   acknowledgeAlert: (id: string) => void;
   resolveAlert: (id: string) => void;
@@ -182,6 +188,7 @@ interface AppState {
   saveRule: (rule: AutomationRule) => Promise<void>;
   deleteRule: (id: string) => Promise<void>;
   triggerRule: (id: string) => Promise<void>;
+  updateRuleInCatalog: (rule: any) => void;
 
   // Internal
   _applySnapshot: (snapshot: BackendSnapshot) => void;
@@ -353,13 +360,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const mergedAlerts = Array.from(existingById.values()).slice(0, 200);
 
-    // Build notifications for new critical/high alerts
+    // Build notifications for all new alerts
     const newNotifs: AppNotification[] = snapshot.new_alerts
-      .filter((a) => {
-        if (a.severity === 'critical') return state.settings.notifyOnCritical;
-        if (a.severity === 'high') return state.settings.notifyOnHigh;
-        return false;
-      })
       .map((a) => ({
         id: `notif-${a.id}`,
         title: a.title,
@@ -377,9 +379,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? [...state.metricsHistory, newMetricsPoint].slice(-30)
       : state.metricsHistory;
 
-    const nextTrafficLogs = snapshot.network_traffic && snapshot.network_traffic.length > 0
-      ? [...state.networkTrafficLogs, ...snapshot.network_traffic].slice(-150)
-      : state.networkTrafficLogs;
+    const trafficMap = new Map(state.networkTrafficLogs.map((p) => [p.id, p]));
+    if (snapshot.network_traffic) {
+      for (const pkt of snapshot.network_traffic) {
+        trafficMap.set(pkt.id, pkt);
+      }
+    }
+    const nextTrafficLogs = Array.from(trafficMap.values()).slice(-150);
 
     // Detect connection transition from offline to online
     if (!state.backendConnected) {
@@ -395,6 +401,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchRules();
     }
 
+    const mergedNotifs = [...newNotifs, ...state.notifications].slice(0, 30);
+    const unreadCount = mergedNotifs.filter((n) => !n.read).length;
+
+    const nextEvidenceItems: EvidenceItem[] = (snapshot.evidence_vault || []).map((e: any) => ({
+      id: e.id,
+      incidentId: e.incidentId || 'INC-000000',
+      type: e.payload?.incident_title?.includes('ICMP') ? 'Network Capture' : (e.payload?.incident_title ? 'Security Artifact' : 'Telemetry Package'),
+      description: `${e.payload?.incident_title || 'Security Incident Evidence'} — ${e.payload?.packets?.length || 0} packets, ${e.payload?.logs?.length || 0} logs captured.`,
+      hash: e.hash ? e.hash.replace('SHA256: ', '') : 'SHA256: PENDING',
+      collectedBy: 'ForenSys Automated Engine',
+      collectedAt: e.timestamp ? new Date(e.timestamp) : new Date(),
+      chain: e.chain || ['Captured', 'Hashed', 'Sealed'],
+      status: e.status === 'Authenticated' ? ('Authenticated' as const) : ('Sealed' as const),
+      payload: e.payload,
+    }));
+
     set({
       backendConnected: true,
       lastUpdate: snapshot.timestamp,
@@ -407,8 +429,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       devices: snapshot.devices,
       listeningPorts: snapshot.listening_ports,
       networkTrafficLogs: nextTrafficLogs,
-      notifications: [...newNotifs, ...state.notifications].slice(0, 30),
+      notifications: mergedNotifs,
       correlatedIncidents: snapshot.incidents || state.correlatedIncidents,
+      evidenceItems: nextEvidenceItems.length > 0 ? nextEvidenceItems : state.evidenceItems,
       evidenceVault: snapshot.evidence_vault || state.evidenceVault,
       remediationHistory: snapshot.remediation_history || state.remediationHistory,
       blockedIps: snapshot.blocked_ips || state.blockedIps,
@@ -436,21 +459,77 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  unblockIpAction: async (ip: string) => {
+  deleteEvidenceItemAction: async (id: string) => {
     try {
-      await apiUnblockIp(ip);
+      await apiDeleteEvidenceItem(id);
       set((state) => ({
-        blockedIps: state.blockedIps.filter((item) => item !== ip),
-        blockedIpDetails: state.blockedIpDetails.map((item) =>
-          item.ip === ip ? { ...item, status: 'unblocked' } : item
-        ),
-        remediationHistory: state.remediationHistory.map((item) =>
-          item.target === ip ? { ...item, status: 'rolled_back' as const } : item
-        ),
+        evidenceItems: state.evidenceItems.filter((e) => e.id !== id),
+        evidenceVault: state.evidenceVault.filter((e) => e.id !== id),
       }));
     } catch (err) {
-      console.error('Error unblocking IP:', err);
+      console.error('Error deleting evidence item:', err);
+      throw err;
     }
+  },
+
+  blockIpAction: async (ip: string) => {
+    // Optimistic UI update: update state synchronously first (0ms delay)
+    set((state) => {
+      const nextBlocked = Array.from(new Set([...state.blockedIps, ip]));
+      const hasDetail = state.blockedIpDetails.some((item) => item.ip === ip);
+      const nextDetails = hasDetail
+        ? state.blockedIpDetails.map((item) => (item.ip === ip ? { ...item, status: 'active' } : item))
+        : [
+            ...state.blockedIpDetails,
+            {
+              ip,
+              blocked_at: new Date().toISOString(),
+              reason: 'Manual Block',
+              action_id: `ACT-${Date.now()}`,
+              incident_id: 'MANUAL',
+              status: 'active',
+            },
+          ];
+      return {
+        blockedIps: nextBlocked,
+        blockedIpDetails: nextDetails,
+      };
+    });
+
+    try {
+      await apiBlockIp(ip);
+    } catch (err) {
+      console.error('Error blocking IP on backend:', err);
+    }
+  },
+
+  unblockIpAction: async (ip: string) => {
+    // Optimistic UI update: update state synchronously first (0ms delay)
+    set((state) => ({
+      blockedIps: state.blockedIps.filter((item) => item !== ip),
+      blockedIpDetails: state.blockedIpDetails.map((item) =>
+        item.ip === ip ? { ...item, status: 'unblocked' } : item
+      ),
+      remediationHistory: state.remediationHistory.map((item) =>
+        item.target === ip ? { ...item, status: 'rolled_back' as const } : item
+      ),
+    }));
+
+    try {
+      await apiUnblockIp(ip);
+    } catch (err) {
+      console.error('Error unblocking IP on backend:', err);
+    }
+  },
+
+  updateRuleInCatalog: (updatedRule: any) => {
+    set((state) => ({
+      ruleCatalog: state.ruleCatalog.map((r: any) =>
+        r.id === updatedRule.id || r.name === updatedRule.name
+          ? { ...r, ...updatedRule, threshold: updatedRule.threshold, time_window: updatedRule.time_window }
+          : r
+      ),
+    }));
   },
 
   clearHistoryAction: async () => {
@@ -470,19 +549,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // ── Alert actions ───────────────────────────────────────────────────────────
-  acknowledgeAlert: (id) =>
+  acknowledgeAlert: (id) => {
+    acknowledgeAlertApi(id).catch(err => console.error('Error acknowledging alert:', err));
     set((s) => ({
       alerts: s.alerts.map((a) =>
         a.id === id ? { ...a, status: 'acknowledged' as const } : a
       ),
-    })),
+      correlatedIncidents: s.correlatedIncidents.map((inc) => ({
+        ...inc,
+        timeline: inc.timeline.map((ev: any) =>
+          ev.id === id ? { ...ev, status: 'acknowledged' } : ev
+        ),
+      })),
+    }));
+  },
 
-  resolveAlert: (id) =>
+  resolveAlert: (id) => {
+    resolveAlertApi(id).catch(err => console.error('Error resolving alert:', err));
     set((s) => ({
       alerts: s.alerts.map((a) =>
         a.id === id ? { ...a, status: 'resolved' as const } : a
       ),
-    })),
+      correlatedIncidents: s.correlatedIncidents.map((inc) => ({
+        ...inc,
+        timeline: inc.timeline.map((ev: any) =>
+          ev.id === id ? { ...ev, status: 'resolved' } : ev
+        ),
+      })),
+    }));
+  },
 
   escalateAlertToIncident: (alertId) => {
     const alert = get().alerts.find((a) => a.id === alertId);
@@ -816,7 +911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   fetchRules: async () => {
     try {
       const rules = await fetchRules();
-      set({ rules });
+      set({ rules, ruleCatalog: rules });
     } catch (err) {
       console.error('Error fetching rules:', err);
     }

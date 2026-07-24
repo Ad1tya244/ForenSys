@@ -95,26 +95,27 @@ class SOAREngine:
         # Automatic remediation triggers based on incident severity and MITRE stages
         actions_to_take = []
         
+        threat_name = incident.title if incident.title else "ICMP Flood Detection"
+
         # 1. Reverse Shell / Critical C2 -> Kill Process & Block IP
         if incident.severity == "critical" or "Reverse Shell" in incident.title or "Command and Control" in incident.mitre_stages:
             if incident.primary_source_ip and incident.primary_source_ip not in ("127.0.0.1", "localhost", "::1"):
-                actions_to_take.append(("block_ip", incident.primary_source_ip, f"Block C2 Source IP ({incident.primary_source_ip})"))
+                actions_to_take.append(("block_ip", incident.primary_source_ip, threat_name))
             if incident.primary_dest_ip and incident.primary_dest_ip not in ("127.0.0.1", "localhost", "::1"):
-                actions_to_take.append(("block_ip", incident.primary_dest_ip, f"Block C2 Destination IP ({incident.primary_dest_ip})"))
+                actions_to_take.append(("block_ip", incident.primary_dest_ip, threat_name))
             if incident.primary_process:
-                actions_to_take.append(("kill_process", incident.primary_process, "Terminate Reverse Shell Process"))
+                actions_to_take.append(("kill_process", incident.primary_process, threat_name))
 
-        # 2. Port Scan / ICMP Flood -> Add PF Rule & Block IP
-        if "Port Scan" in incident.title or "ICMP Flood" in incident.title or "Impact" in incident.mitre_stages or "Reconnaissance" in incident.mitre_stages:
+        # 2. Port Scan / ICMP Flood -> Single Perimeter Block IP
+        elif "Port Scan" in incident.title or "ICMP Flood" in incident.title or "Impact" in incident.mitre_stages or "Reconnaissance" in incident.mitre_stages:
             if incident.primary_source_ip and incident.primary_source_ip not in ("127.0.0.1", "localhost", "::1"):
-                actions_to_take.append(("add_pf_rule", incident.primary_source_ip, f"Add macOS PF Rule for {incident.primary_source_ip}"))
-                actions_to_take.append(("block_ip", incident.primary_source_ip, f"Block Attacking Source IP ({incident.primary_source_ip})"))
+                actions_to_take.append(("block_ip", incident.primary_source_ip, threat_name))
 
         # 3. Data Exfiltration -> Block IP & Capture Metadata
         elif "Exfiltration" in incident.mitre_stages:
             if incident.primary_dest_ip:
-                actions_to_take.append(("block_ip", incident.primary_dest_ip, "Block Exfiltration Destination IP"))
-            actions_to_take.append(("capture_metadata", incident.primary_process or "system", "Capture Host Process Metadata"))
+                actions_to_take.append(("block_ip", incident.primary_dest_ip, threat_name))
+            actions_to_take.append(("capture_metadata", incident.primary_process or "system", threat_name))
 
         # Always trigger analyst notification and PCAP capture for High/Critical incidents
         if incident.severity in ("high", "critical"):
@@ -139,7 +140,11 @@ class SOAREngine:
     def execute_action(self, incident_id: str, action_type: str, target: str, rule_name: str, now: Optional[float] = None) -> RemediationActionLog:
         """Executes a specific SOAR remediation action and records its execution log."""
         ts = now if now else time.time()
-        act_id = f"ACT-{uuid.uuid4().hex[:6].upper()}"
+        if incident_id and incident_id != "MANUAL":
+            act_id = incident_id
+        else:
+            matching_manual = sum(1 for log in self.remediation_history if log.action_id.startswith("MANUAL")) + 1
+            act_id = f"MANUAL{matching_manual:02d}"
         
         # Enforce Self-Protection Safeguard Check before executing remediation
         from pipeline.self_protection import asset_trust_manager
@@ -168,10 +173,11 @@ class SOAREngine:
         rollback_info: Dict[str, Any] = {"action_type": action_type, "target": target}
 
         try:
+            mttr_sec = max(0.1, round(ts - (now if now else ts), 2))
             if action_type == "block_ip":
                 self.blocked_ips.add(target)
                 status = "success"
-                result_details = {"message": f"IP {target} added to active perimeter blocklist."}
+                result_details = {"message": f"IP {target} added to active perimeter blocklist.", "mttr_sec": mttr_sec}
                 rollback_info["command"] = f"unblock_ip {target}"
 
             elif action_type == "add_pf_rule":
@@ -271,6 +277,11 @@ class SOAREngine:
                     }
         return list(ip_map.values())
 
+    def block_ip(self, ip: str, reason: str = "Manual Perimeter Block") -> RemediationActionLog:
+        self.blocked_ips.add(ip)
+        log = self.execute_action("MANUAL", "block_ip", ip, reason)
+        return log
+
     def unblock_ip(self, ip: str) -> Optional[RemediationActionLog]:
         if ip in self.blocked_ips:
             self.blocked_ips.remove(ip)
@@ -284,11 +295,12 @@ class SOAREngine:
         return None
 
     def clear_history(self) -> None:
-        self.remediation_history = []
-        self.blocked_ips = set()
-        self.pf_rules = []
+        # Clear auto remediation execution logs without removing active perimeter firewall blocks
+        self.remediation_history = [log for log in self.remediation_history if log.incident_id == "MANUAL"]
         try:
             with open(self.log_path, "w") as f:
-                json.dump([], f)
+                json.dump([log.to_dict() for log in self.remediation_history], f, indent=2)
         except Exception as e:
             print(f"[SOAREngine] Error clearing history: {e}")
+
+soar_engine = SOAREngine()

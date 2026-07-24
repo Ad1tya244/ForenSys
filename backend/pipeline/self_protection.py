@@ -109,6 +109,7 @@ class AssetTrustManager:
         if config.get("attack_simulation_mode", False):
             return False, None
 
+        event_type = event.get("event_type")
         pid = event.get("pid")
         process_name = (event.get("process") or "").lower()
         src_ip = event.get("src_ip") or event.get("local_ip") or ""
@@ -117,6 +118,15 @@ class AssetTrustManager:
         dst_port = event.get("dst_port") or event.get("remote_port")
         details = str(event.get("details") or "").lower()
         path = str(event.get("path") or "").lower()
+
+        is_src_loopback = (src_ip in LOOPBACK_HOSTS) or src_ip.startswith("127.")
+        is_dst_loopback = (dst_ip in LOOPBACK_HOSTS) or dst_ip.startswith("127.")
+
+        # Dedicated rule for raw network packets off the wire
+        if event_type == "PACKET":
+            if is_src_loopback and is_dst_loopback and (src_port in TRUSTED_PORTS or dst_port in TRUSTED_PORTS):
+                return True, f"Internal Loopback IPC packet on port {src_port or dst_port}"
+            return False, None
 
         # Indicator 1: Registered PID ownership
         if pid in self.registered_pids:
@@ -127,17 +137,11 @@ class AssetTrustManager:
             return True, f"Originates within ForenSys project directory ({self.project_root})"
 
         # Indicator 3: Internal Loopback IPC & ForenSys Listening Ports
-        # Note: ONLY filter if BOTH source and destination are local loopback OR involving trusted local ports!
-        # External attacks targeting port 8000 from external IPs (e.g. 198.51.100.44) will NOT be filtered!
-        is_src_loopback = (src_ip in LOOPBACK_HOSTS) or src_ip.startswith("127.")
-        is_dst_loopback = (dst_ip in LOOPBACK_HOSTS) or dst_ip.startswith("127.")
-        
         if is_src_loopback and is_dst_loopback:
-            # Both ends are loopback - check if process or port belongs to ForenSys
             if process_name in TRUSTED_PROCESS_NAMES or (src_port in TRUSTED_PORTS or dst_port in TRUSTED_PORTS):
                 return True, f"Internal Loopback IPC between ForenSys services ({src_ip}:{src_port} -> {dst_ip}:{dst_port})"
             if process_name in ("nmap", "curl", "python3") and any(kw in details for kw in ("simulate", "test")):
-                return False, None # Allow test tools if explicitly targeting non-loopback
+                return False, None
             return True, f"Self-generated loopback activity ({src_ip} -> {dst_ip})"
 
         # Indicator 4: Process Name + ForenSys Port / Path indicator

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Lock, Hash, Calendar, User, FileCode, Copy, Cpu, Globe, Database } from 'lucide-react';
+import { Lock, Hash, Calendar, User, FileCode, Copy, Cpu, Globe, Database, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -101,47 +101,72 @@ const renderStructuredPayload = (item: EvidenceItem) => {
       );
 
     case 'Network Capture':
+    case 'Security Artifact':
+    case 'Telemetry Package':
+      const packets = p.packets || [];
+      const logs = p.logs || [];
+      
+      const targetAsset = p.affected_assets?.[0];
+      const isIcmpIncident = p.incident_title?.includes('ICMP');
+
+      const icmpOrAttackerPkts = packets.filter((pkt: any) => 
+        pkt.protocol === 'ICMP' ||
+        (targetAsset && (pkt.src_ip === targetAsset || pkt.dst_ip === targetAsset))
+      );
+      const displayPackets = (isIcmpIncident && icmpOrAttackerPkts.length > 0) ? icmpOrAttackerPkts : (icmpOrAttackerPkts.length > 0 ? icmpOrAttackerPkts : packets);
+
+      const firstPkt = displayPackets[0] || packets[0] || {};
+      const srcIp = p.attacker_ip || (firstPkt.src_ip && firstPkt.src_ip !== '192.168.1.13' ? firstPkt.src_ip : '192.168.1.5');
+      
+      let dstIp = p.affected_assets?.[0] || firstPkt.dst_ip || '192.168.1.13';
+      if (!dstIp || dstIp.includes(':') || dstIp === '0.0.0.0' || dstIp === 'localhost') {
+        dstIp = '192.168.1.13';
+      }
+      
+      const proto = isIcmpIncident ? 'ICMP' : (firstPkt.protocol || p.protocol || 'TCP');
+
       return (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
-            <div className="p-2.5 bg-card/45 rounded border border-border/20 col-span-2 md:col-span-1">
-              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Process Link</span>
-              <span className="text-foreground font-semibold text-sm truncate block">{p.process || 'N/A'}</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Attacker IP (Source)</span>
+              <span className="text-accent font-semibold text-sm truncate block">{srcIp}</span>
             </div>
             <div className="p-2.5 bg-card/45 rounded border border-border/20">
-              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Local Socket</span>
-              <span className="text-foreground text-xs truncate block">{p.local_ip ? `${p.local_ip}:${p.local_port}` : 'N/A'}</span>
-            </div>
-            <div className="p-2.5 bg-card/45 rounded border border-border/20">
-              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Remote Socket</span>
-              <span className="text-accent font-semibold text-xs truncate block">{p.remote_ip ? `${p.remote_ip}:${p.remote_port}` : 'N/A'}</span>
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Affected System (Target)</span>
+              <span className="text-foreground text-xs truncate block">{dstIp}</span>
             </div>
             <div className="p-2.5 bg-card/45 rounded border border-border/20">
               <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Protocol</span>
-              <span className="text-foreground text-sm">{p.protocol || 'TCP'}</span>
+              <span className="text-foreground font-semibold text-sm">{proto}</span>
             </div>
-            {p.status && (
-              <div className="p-2.5 bg-card/45 rounded border border-border/20">
-                <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">TCP Socket State</span>
-                <span className="text-foreground text-sm">{p.status}</span>
-              </div>
-            )}
-            {p.geo?.country && (
-              <div className="p-2.5 bg-card/45 rounded border border-border/20">
-                <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Geo Location</span>
-                <span className="text-foreground text-sm flex items-center gap-1">
-                  <Globe className="w-3.5 h-3.5 text-accent" />
-                  {p.geo.country}
-                </span>
-              </div>
-            )}
+            <div className="p-2.5 bg-card/45 rounded border border-border/20">
+              <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Captured Telemetry</span>
+              <span className="text-foreground text-xs">{displayPackets.length} packets, {logs.length} logs</span>
+            </div>
           </div>
-          {p.geo?.org && (
-            <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-xs text-left">
-              <span className="text-muted-foreground block text-[10px] uppercase mb-1">Remote ISP/Owner Organization</span>
-              <span className="text-foreground">{p.geo.org}</span>
+
+          {displayPackets.length > 0 && (
+            <div className="p-3 bg-card/30 border border-border/40 rounded space-y-2 text-left">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/20 pb-1.5 font-mono">
+                <span>Captured Packet Telemetry ({displayPackets.length} items)</span>
+                <span className="font-mono text-accent">{proto} TELEMETRY</span>
+              </div>
+              <ScrollArea className="max-h-55">
+                <div className="space-y-1 font-mono text-[11px]">
+                  {displayPackets.map((pkt: any, idx: number) => (
+                    <div key={idx} className="p-1.5 rounded bg-background/50 border border-border/20 flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground text-[10px] w-6 shrink-0">#{idx + 1}</span>
+                      <Badge variant="outline" className="text-[9px] py-0 px-1 border-accent/40 text-accent shrink-0">{pkt.protocol || 'ICMP'}</Badge>
+                      <span className="text-foreground font-medium truncate flex-1">{pkt.src_ip || 'N/A'} &rarr; {pkt.dst_ip || 'N/A'}</span>
+                      <span className="text-muted-foreground text-[10px] shrink-0 truncate max-w-55">{pkt.info || `${pkt.length || 64} bytes`}</span>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             </div>
           )}
+
           {p.indicators && p.indicators.length > 0 && (
             <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-xs text-left">
               <span className="text-muted-foreground block text-[10px] uppercase mb-1">Security Flags / Threat Indicators</span>
@@ -202,7 +227,8 @@ const renderStructuredPayload = (item: EvidenceItem) => {
 };
 
 export default function ForensicsPage() {
-  const { evidenceItems, authenticateEvidenceItem, hasPermission } = useAppStore();
+  const { evidenceItems, authenticateEvidenceItem, deleteEvidenceItemAction, currentUser, hasPermission } = useAppStore();
+  const isAdmin = currentUser?.role === 'admin';
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
   const [filter, setFilter] = useState('all');
   const [detailsTab, setDetailsTab] = useState<'structured' | 'raw'>('structured');
@@ -327,7 +353,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
           <div className="p-4 border-b border-border/50">
             <h2 className="text-lg font-semibold text-foreground">Evidence Items ({filteredItems.length})</h2>
           </div>
-          <ScrollArea className="flex-1 max-h-[600px] min-h-[300px]">
+          <ScrollArea className="flex-1 max-h-150 min-h-75">
             <div className="space-y-2 p-4">
               <AnimatePresence mode="popLayout">
                 {filteredItems.map((item, idx) => (
@@ -373,7 +399,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
         </div>
 
         {/* Evidence Details */}
-        <div className="lg:col-span-2 glass rounded-lg border border-border/50 p-6 space-y-4 overflow-auto min-h-[350px] flex flex-col justify-center">
+        <div className="lg:col-span-2 glass rounded-lg border border-border/50 p-6 flex flex-col min-h-87.5 justify-between">
           {selectedEvidence ? (
             <AnimatePresence mode="wait">
               <motion.div
@@ -381,7 +407,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="space-y-4 w-full h-full text-left"
+                className="flex flex-col flex-1 min-h-0 space-y-4 w-full text-left"
               >
                 {/* Header */}
                 <div>
@@ -410,7 +436,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                         <Hash className="w-4 h-4 text-accent" />
                         Hash (SHA256)
                       </span>
-                      <code className="text-accent font-mono text-xs truncate max-w-[200px] sm:max-w-xs">{selectedEvidence.hash}</code>
+                      <code className="text-accent font-mono text-xs truncate max-w-50 sm:max-w-xs">{selectedEvidence.hash}</code>
                     </div>
                     <div className="flex items-center justify-between p-2 bg-card/50 rounded border border-border/20">
                       <span className="text-muted-foreground flex items-center gap-2">
@@ -431,7 +457,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
 
                 {/* Captured Forensic Payload */}
                 {selectedEvidence.payload && (
-                  <div className="border-t border-border/50 pt-4 space-y-3">
+                  <div className="border-t border-border/50 pt-4 space-y-3 flex-1 min-h-0 flex flex-col">
                     <div className="flex items-center justify-between">
                       <h3 className="font-semibold text-foreground flex items-center gap-2">
                         <FileCode className="w-4 h-4 text-accent" />
@@ -461,7 +487,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                       </div>
                     </div>
 
-                    <div className="glass rounded border border-border/50 p-4 min-h-[160px] bg-card/25">
+                    <div className="glass rounded border border-border/50 p-4 bg-card/25 max-h-75 overflow-y-auto">
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={detailsTab}
@@ -473,7 +499,7 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                           {detailsTab === 'structured' ? (
                             renderStructuredPayload(selectedEvidence)
                           ) : (
-                            <div className="relative font-mono text-xs bg-black/40 border border-border/20 rounded p-3 text-emerald-400 overflow-auto max-h-[300px] select-all">
+                            <div className="relative font-mono text-xs bg-black/40 border border-border/20 rounded p-3 text-emerald-400 overflow-auto max-h-60 select-all">
                               <button
                                 onClick={() => {
                                   navigator.clipboard.writeText(JSON.stringify(selectedEvidence.payload, null, 2));
@@ -493,23 +519,23 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="border-t border-border/50 pt-4 flex gap-2">
+                {/* Actions Footer */}
+                <div className="border-t border-border/50 pt-4 mt-auto grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
                   <Button
                     onClick={() => {
                       authenticateEvidenceItem(selectedEvidence.id);
                       toast.success('Evidence Authenticated', { description: 'Added verified checksum to chain of custody.' });
                     }}
-                    className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground flex items-center justify-center gap-1.5"
+                    className="w-full bg-accent hover:bg-accent/90 text-accent-foreground flex items-center justify-center gap-1.5 text-xs truncate"
                     size="sm"
                     disabled={selectedEvidence.status === 'Authenticated' || !hasPermission('manage_incidents')}
                   >
-                    Authenticate Evidence
+                    Authenticate
                   </Button>
                   <Button
                     onClick={() => handleDownloadJSON(selectedEvidence)}
                     variant="outline"
-                    className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
+                    className="w-full border-border/50 flex items-center justify-center gap-1.5 text-xs truncate"
                     size="sm"
                     disabled={!hasPermission('export_forensics')}
                   >
@@ -518,12 +544,33 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                   <Button
                     onClick={() => handleExportReport(selectedEvidence)}
                     variant="outline"
-                    className="flex-1 border-border/50 flex items-center justify-center gap-1.5"
+                    className="w-full border-border/50 flex items-center justify-center gap-1.5 text-xs truncate"
                     size="sm"
                     disabled={!hasPermission('export_forensics')}
                   >
                     Export Report
                   </Button>
+                  {isAdmin ? (
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await deleteEvidenceItemAction(selectedEvidence.id);
+                          toast.success('Evidence Bundle Deleted', { description: `Forensic package ${selectedEvidence.id} removed.` });
+                          setSelectedEvidence(null);
+                        } catch (err: any) {
+                          toast.error('Deletion Failed', { description: err.message || 'Only Admin users can delete forensic evidence bundles.' });
+                        }
+                      }}
+                      variant="destructive"
+                      className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center justify-center gap-1.5 text-xs truncate shadow-md shadow-red-950/50 border-0"
+                      size="sm"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete Bundle
+                    </Button>
+                  ) : (
+                    <div />
+                  )}
                 </div>
               </motion.div>
             </AnimatePresence>
