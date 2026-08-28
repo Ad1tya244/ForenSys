@@ -285,9 +285,9 @@ export default function DashboardLayout({
                   </button>
                 </div>
                 <div className="max-h-64 overflow-y-auto">
-                  {notifications.slice(0, 8).map((n) => (
+                  {notifications.slice(0, 8).map((n, idx) => (
                     <div
-                      key={n.id}
+                      key={`${n.id}-${idx}`}
                       className={`px-3 py-2.5 border-b border-border/30 hover:bg-card/80 transition-colors ${
                         !n.read ? 'bg-accent/5' : ''
                       }`}

@@ -25,23 +25,26 @@ class BruteForceAuthRule(BaseRule):
         window_sec = config.get("auth_window_sec", 60.0)
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        from analyzers.ip_intel import ensure_ipv4
         for key, fails in snapshot.auth_failures_by_src.items():
             if fails >= limit and snapshot.auth_successes_by_src.get(key, 0) > 0:
+                key_v4 = ensure_ipv4(str(key))
                 alerts.append(DetectionAlert(
-                    alert_id=f"brute-force-{key}-{int(current_time // 60)}",
+                    alert_id=f"brute-force-{key_v4}-{int(current_time // 60)}",
                     rule_name=self.name,
                     severity=self.severity,
-                    title=f"Successful Brute Force Authentication ({key})",
+                    title=f"Successful Brute Force Authentication ({key_v4})",
                     description=(
-                        f"Source/Entity '{key}' generated {fails} failed authentication attempts "
+                        f"Source/Entity '{key_v4}' generated {fails} failed authentication attempts "
                         f"followed by successful login within {window_sec}s."
                     ),
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=[str(key), "auth_service"],
+                    affected_assets=[str(key_v4), "auth_service"],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"entity": str(key), "failed_attempts": fails, "successful_login": True}
+                    metadata={"entity": str(key_v4), "failed_attempts": fails, "successful_login": True}
                 ))
+
         return alerts

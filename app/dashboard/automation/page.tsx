@@ -133,8 +133,8 @@ export default function AutoRemediationHistoryPage() {
               {filteredLogs.map((log, idx) => {
                 const detectedTime = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 const remediatedTime = new Date(new Date(log.timestamp).getTime() + 1200).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const attackerIp = log.target || '192.168.1.5';
-                const affectedTarget = '192.168.1.13';
+                const attackerIp = log.target || log.src_ip || 'Remote IP';
+                const affectedTarget = log.affectedTarget || log.affected_assets?.[0] || log.dst_ip || 'Local Host';
 
                 return (
                   <tr key={`${log.id}-${idx}`} className="hover:bg-white/5 transition-colors">

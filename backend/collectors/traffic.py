@@ -29,7 +29,7 @@ except ImportError:
 from collectors.network import get_connections
 
 # Thread-safe global queue for captured packet telemetry
-_packet_queue = collections.deque(maxlen=100)
+_packet_queue = collections.deque(maxlen=5000)
 _queue_lock = threading.Lock()
 
 _sniffer_thread: threading.Thread | None = None
@@ -140,9 +140,17 @@ def _process_scapy_packet(packet) -> None:
         
     elif packet.haslayer(UDP):
         udp_layer = packet[UDP]
-        src_port = udp_layer.sport
-        dst_port = udp_layer.dport
-        
+        src_port = int(udp_layer.sport)
+        dst_port = int(udp_layer.dport)
+
+        # Ignore WebRTC high-frequency media streams (e.g. Google Meet / Zoom screen share / video audio streams)
+        if not packet.haslayer("DNS") and (
+            19302 <= src_port <= 19309 or 19302 <= dst_port <= 19309 or
+            src_port in (3478, 3479, 3480, 3481) or dst_port in (3478, 3479, 3480, 3481) or
+            (50000 <= src_port <= 60000 and 50000 <= dst_port <= 60000)
+        ):
+            return
+
         info = f"Len={udp_layer.len}"
         
         # Resolve DNS queries if present
@@ -162,13 +170,15 @@ def _process_scapy_packet(packet) -> None:
     elif ICMP is not None and packet.haslayer(ICMP):
         icmp_layer = packet[ICMP]
         info = f"Type={icmp_layer.type} Code={icmp_layer.code}"
-        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, info)
-    elif ICMPv6EchoRequest is not None and (packet.haslayer(ICMPv6EchoRequest) or packet.haslayer(ICMPv6EchoReply)):
-        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, f"ICMPv6 Echo Request/Reply")
+        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, info, icmp_type=icmp_layer.type)
+    elif ICMPv6EchoRequest is not None and packet.haslayer(ICMPv6EchoRequest):
+        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, "ICMPv6 Echo Request", icmp_type=128)
+    elif ICMPv6EchoReply is not None and packet.haslayer(ICMPv6EchoReply):
+        _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, "ICMPv6 Echo Reply", icmp_type=129)
     elif "ICMP" in packet.summary():
         _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, f"ICMP: {packet.summary()}")
 
-def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str) -> None:
+def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str, icmp_type: int | None = None) -> None:
     """Thread-safe append of packet to global deque (drops telemetry from blocked IPs)."""
     try:
         from pipeline.soar_engine import soar_engine
@@ -189,6 +199,8 @@ def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port
         "length": length,
         "info": info
     }
+    if icmp_type is not None:
+        packet_log["icmp_type"] = icmp_type
     with _queue_lock:
         _packet_queue.append(packet_log)
 
@@ -196,7 +208,8 @@ def _run_packet_simulator() -> None:
     """Generate high-fidelity simulated packet flows matching active connection targets."""
     # Seed local addresses
     localhost_ip = "127.0.0.1"
-    primary_ip = "192.168.1.104"
+    from pipeline.self_protection import get_primary_host_ip
+    primary_ip = get_primary_host_ip()
     
     while _sniffer_running:
         try:

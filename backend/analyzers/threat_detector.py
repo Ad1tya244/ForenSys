@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict, deque
 from typing import List, Dict, Set
 
-from analyzers.ip_intel import is_private_ip, is_blocklisted
+from analyzers.ip_intel import is_private_ip, is_blocklisted, ensure_ipv4
 
 # ── Known C2 / backdoor ports ─────────────────────────────────────────────────
 SUSPICIOUS_PORTS: Set[int] = {
@@ -104,7 +104,8 @@ class ThreatDetector:
 
             # Rule 1 — Suspicious remote port
             if rport in SUSPICIOUS_PORTS and rport not in WHITELIST_REMOTE_PORTS:
-                aid = f"suspicious-port-{rip}-{rport}"
+                rip_v4 = ensure_ipv4(rip)
+                aid = f"suspicious-port-{rip_v4}-{rport}"
                 if aid not in self._fired:
                     self._fired.add(aid)
                     out.append(self._make(
@@ -112,48 +113,51 @@ class ThreatDetector:
                         severity="critical",
                         title=f"Connection to Suspicious Port {rport}",
                         desc=(
-                            f"Process '{process}' established a connection to {rip}:{rport}. "
+                            f"Process '{process}' established a connection to {rip_v4}:{rport}. "
                             f"Port {rport} is associated with malware, C2 frameworks, or backdoors."
                         ),
                         source="Network Monitor",
-                        assets=[process, rip],
+                        assets=[process, rip_v4],
                     ))
 
             # Rule 2 — Blocklisted IP
             if is_blocklisted(rip):
-                aid = f"blocklist-{rip}"
+                rip_v4 = ensure_ipv4(rip)
+                aid = f"blocklist-{rip_v4}"
                 if aid not in self._fired:
                     self._fired.add(aid)
                     out.append(self._make(
                         aid="blocklist",
                         severity="high",
-                        title=f"Connection to Blocklisted IP: {rip}",
+                        title=f"Connection to Blocklisted IP: {rip_v4}",
                         desc=(
-                            f"Active connection to {rip}:{rport} via process '{process}'. "
+                            f"Active connection to {rip_v4}:{rport} via process '{process}'. "
                             f"This IP appears on the Emerging Threats blocklist."
                         ),
                         source="Threat Intelligence",
-                        assets=[process, rip],
+                        assets=[process, rip_v4],
                     ))
 
         # Rule 3 — Port scan (>15 unique remote ports from one IP)
         for ip, ports in self._port_hits.items():
             if len(ports) > 15:
-                aid = f"portscan-{ip}"
+                ip_v4 = ensure_ipv4(ip)
+                aid = f"portscan-{ip_v4}"
                 if aid not in self._fired:
                     self._fired.add(aid)
                     out.append(self._make(
                         aid="port_scan",
                         severity="high",
-                        title=f"Port Scan Detected from {ip}",
+                        title=f"Port Scan Detected from {ip_v4}",
                         desc=(
-                            f"IP {ip} has connected to {len(ports)} unique ports "
+                            f"IP {ip_v4} has connected to {len(ports)} unique ports "
                             f"({', '.join(str(p) for p in sorted(ports)[:10])}...). "
                             f"Indicative of automated port scanning."
                         ),
                         source="Network Monitor",
-                        assets=["localhost", ip],
+                        assets=["localhost", ip_v4],
                     ))
+
 
     def _rule_processes(self, processes: List[Dict], out: List[Dict]) -> None:
         # Local Mac processes and background daemons must NOT raise alerts

@@ -13,7 +13,7 @@ import threading
 import time
 import os
 import secrets
-from typing import List, Optional
+from typing import List, Optional, Dict, Set
 from contextlib import asynccontextmanager
 
 import uvicorn  # type: ignore[import-untyped]
@@ -208,6 +208,7 @@ evidence_manager = EvidenceManager()
 _clients: List[WebSocket] = []
 _latest_snapshot: dict = {}
 _all_alerts: List[dict] = []
+_emitted_alert_ids: Set[str] = set()
 _prev_net_io: dict = {}
 
 # SOAR Automation Rules Storage
@@ -317,10 +318,20 @@ async def collect_loop() -> None:
                     evidence_manager.generate_evidence(inc, state_engine)
                     soar_engine.evaluate_and_remediate(inc, load_rules())
 
+            # Filter fresh detection alerts using unique alert_id tracking to prevent duplicate WS notifications
+            fresh_detection_alerts = []
+            for a in detection_alerts:
+                if a.alert_id not in _emitted_alert_ids:
+                    _emitted_alert_ids.add(a.alert_id)
+                    fresh_detection_alerts.append(a)
+
+            if len(_emitted_alert_ids) > 500:
+                _emitted_alert_ids.clear()
+
             # Legacy threat detector (for backward compatibility)
             legacy_alerts = detector.analyze(connections, processes, logs, listening)
 
-            all_new_alerts = [a.to_dict() for a in detection_alerts] + legacy_alerts
+            all_new_alerts = [a.to_dict() for a in fresh_detection_alerts] + legacy_alerts
             
             # Check automation rules on new alerts
             if all_new_alerts:
@@ -337,20 +348,23 @@ async def collect_loop() -> None:
                             severity_match = (sev == "any") or (sev == alert.get("severity"))
                             
                             # Heuristic matching by trigger description & alert details
+                            rule_name_lower = rule.get("name", "").lower()
                             trigger_lower = rule.get("trigger", "").lower()
                             title_lower = alert.get("title", "").lower()
                             desc_lower = alert.get("description", "").lower()
                             
                             trigger_match = False
-                            if "ransomware" in trigger_lower and "ransomware" in title_lower:
+                            if rule_name_lower and (rule_name_lower in title_lower or rule_name_lower in desc_lower):
+                                trigger_match = True
+                            elif "icmp" in rule_name_lower and "icmp" in title_lower:
+                                trigger_match = True
+                            elif "ransomware" in trigger_lower and "ransomware" in title_lower:
                                 trigger_match = True
                             elif "c2" in trigger_lower and ("c2" in title_lower or "c2" in desc_lower or "blocklist" in title_lower):
                                 trigger_match = True
                             elif "severity == critical" in trigger_lower and alert.get("severity") == "critical":
                                 trigger_match = True
                             elif "external ip" in trigger_lower and any(not is_private_ip(asset) for asset in alert.get("affectedAssets", [])):
-                                trigger_match = True
-                            elif rule.get("severity") == alert.get("severity") and rule.get("severity") != "any":
                                 trigger_match = True
                             
                             if severity_match and trigger_match:
@@ -544,10 +558,10 @@ def api_get_evidence():
 def api_delete_evidence(id: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Only Admin users can delete forensic evidence bundles")
-    success = evidence_manager.delete_evidence(id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Evidence bundle not found")
-    return {"status": "success", "message": f"Evidence bundle {id} deleted."}
+    evidence_manager.delete_evidence(id)
+    alt_id = id.replace("EVD-", "") if id.startswith("EVD-") else f"EVD-{id}"
+    evidence_manager.delete_evidence(alt_id)
+    return {"status": "success", "message": f"Evidence bundle {id} deleted.", "id": id}
 
 
 @app.post("/api/alerts/{id}/resolve")
@@ -601,6 +615,7 @@ def api_block_ip(ip: str):
 
 @app.post("/api/remediation/unblock/{ip}")
 def api_unblock_ip(ip: str):
+    _emitted_alert_ids.clear()
     log = soar_engine.unblock_ip(ip)
     return {
         "status": "success",
@@ -613,6 +628,7 @@ def api_unblock_ip(ip: str):
 def api_clear_history():
     global _all_alerts
     _all_alerts.clear()
+    _emitted_alert_ids.clear()
     correlation_engine.incidents.clear()
     soar_engine.clear_history()
     evidence_manager.clear_vault()
@@ -1181,18 +1197,6 @@ def api_delete_rule(rule_id: str, current_user: dict = Depends(get_current_user)
     save_rules(rules)
     return {"status": "success"}
 
-
-@app.delete("/api/evidence/{id}")
-def api_delete_evidence(id: str, current_user: dict = Depends(get_current_user)):
-    try:
-        deleted = evidence_manager.delete_evidence(id)
-        if not deleted:
-            alt_id = id.replace("EVD-", "") if id.startswith("EVD-") else f"EVD-{id}"
-            evidence_manager.delete_evidence(alt_id)
-        return {"status": "success", "id": id}
-    except Exception as e:
-        print(f"Error deleting evidence: {e}")
-        return {"status": "success", "id": id}
 
 
 @app.post("/api/rules/{rule_id}/trigger")

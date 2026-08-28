@@ -66,6 +66,21 @@ class AssetTrustManager:
         except Exception:
             pass
 
+    def get_primary_host_ip(self) -> str:
+        """Finds the primary non-loopback IPv4 address assigned to this device."""
+        try:
+            import socket
+            for iface, addrs in psutil.net_if_addrs().items():
+                for addr in addrs:
+                    if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                        return addr.address
+        except Exception:
+            pass
+        for ip in self.local_ips:
+            if not ip.startswith("127.") and not ip.startswith("fe80") and "." in ip and ip != "0.0.0.0":
+                return ip
+        return "127.0.0.1"
+
     def _discover_local_forensys_pids(self) -> None:
         """Discovers running processes belonging to ForenSys based on directory & cmdline."""
         try:
@@ -203,3 +218,6 @@ class AssetTrustManager:
 
 # Singleton instance
 asset_trust_manager = AssetTrustManager()
+
+def get_primary_host_ip() -> str:
+    return asset_trust_manager.get_primary_host_ip()

@@ -401,7 +401,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchRules();
     }
 
-    const mergedNotifs = [...newNotifs, ...state.notifications].slice(0, 30);
+    const notifMap = new Map<string, AppNotification>();
+    for (const notif of [...newNotifs, ...state.notifications]) {
+      if (!notifMap.has(notif.id)) {
+        notifMap.set(notif.id, notif);
+      }
+    }
+    const mergedNotifs = Array.from(notifMap.values()).slice(0, 30);
     const unreadCount = mergedNotifs.filter((n) => !n.read).length;
 
     const nextEvidenceItems: EvidenceItem[] = (snapshot.evidence_vault || []).map((e: any) => ({

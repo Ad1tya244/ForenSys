@@ -77,17 +77,19 @@ class IncidentCorrelationEngine:
 
         # 1. Group alerts by matching entity keys (src_ip, dst_ip, or process)
         clusters: Dict[str, List[DetectionAlert]] = {}
+        from analyzers.ip_intel import ensure_ipv4
         for alert in alerts:
             # Extract key entity identifier
             entity_key = "global"
             if alert.metadata.get("src_ip"):
-                entity_key = f"ip_{alert.metadata['src_ip']}"
+                entity_key = f"ip_{ensure_ipv4(alert.metadata['src_ip'])}"
             elif alert.metadata.get("remote_ip"):
-                entity_key = f"ip_{alert.metadata['remote_ip']}"
+                entity_key = f"ip_{ensure_ipv4(alert.metadata['remote_ip'])}"
             elif alert.metadata.get("process"):
                 entity_key = f"proc_{alert.metadata['process']}"
             elif alert.affected_assets:
-                entity_key = f"asset_{alert.affected_assets[0]}"
+                entity_key = f"asset_{ensure_ipv4(alert.affected_assets[0])}"
+
             
             if entity_key not in clusters:
                 clusters[entity_key] = []
@@ -163,9 +165,10 @@ class IncidentCorrelationEngine:
                 assets_set.add(asset)
             
             from pipeline.self_protection import asset_trust_manager
+            from analyzers.ip_intel import ensure_ipv4
 
-            candidate_src = a.metadata.get("src_ip") or a.metadata.get("remote_ip") or ""
-            candidate_dst = a.metadata.get("dst_ip") or ""
+            candidate_src = ensure_ipv4(a.metadata.get("src_ip") or a.metadata.get("remote_ip") or "")
+            candidate_dst = ensure_ipv4(a.metadata.get("dst_ip") or "")
             
             if candidate_src and candidate_src not in asset_trust_manager.local_ips and not candidate_src.startswith("127."):
                 if not src_ip:

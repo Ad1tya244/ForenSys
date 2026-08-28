@@ -25,21 +25,24 @@ class PortScanRule(BaseRule):
         window_sec = config.get("portscan_window_sec", 15.0)
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        from analyzers.ip_intel import ensure_ipv4
         for src_ip, ports in snapshot.unique_dst_ports_by_src.items():
             if len(ports) >= threshold:
+                src_ip_v4 = ensure_ipv4(src_ip)
                 sample_ports = sorted(list(ports))[:10]
                 alerts.append(DetectionAlert(
-                    alert_id=f"portscan-{src_ip}-{int(current_time // 15)}",
+                    alert_id=f"portscan-{src_ip_v4}-{int(current_time // 15)}",
                     rule_name=self.name,
                     severity=self.severity,
-                    title=f"Port Scan Detected from {src_ip}",
-                    description=f"Source IP {src_ip} attempted connections to {len(ports)} unique destination ports within {window_sec}s (Ports: {sample_ports}...).",
+                    title=f"Port Scan Detected from {src_ip_v4}",
+                    description=f"Source IP {src_ip_v4} attempted connections to {len(ports)} unique destination ports within {window_sec}s (Ports: {sample_ports}...).",
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=[src_ip, "localhost"],
+                    affected_assets=[src_ip_v4, "localhost"],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"src_ip": src_ip, "unique_ports": len(ports), "sample_ports": sample_ports}
+                    metadata={"src_ip": src_ip_v4, "unique_ports": len(ports), "sample_ports": sample_ports}
                 ))
+
         return alerts

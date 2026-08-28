@@ -28,7 +28,8 @@ class AuthAttackRule(BaseRule):
         total_auth_failures = sum(snapshot.auth_failures_by_src.values())
 
         if total_auth_failures >= limit:
-            affected_sources = list(snapshot.auth_failures_by_src.keys())
+            from analyzers.ip_intel import ensure_ipv4
+            affected_sources = [ensure_ipv4(str(k)) for k in snapshot.auth_failures_by_src.keys()]
             alerts.append(DetectionAlert(
                 alert_id=f"auth-attack-correlated-{int(current_time // 60)}",
                 rule_name=self.name,
@@ -43,4 +44,5 @@ class AuthAttackRule(BaseRule):
                 remediation=self.recommended_remediation,
                 metadata={"total_failures": total_auth_failures, "sources": affected_sources}
             ))
+
         return alerts

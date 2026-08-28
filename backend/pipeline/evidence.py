@@ -14,6 +14,7 @@ from pipeline.correlation_engine import CorrelatedIncident
 from pipeline.state_engine import BehaviorStateEngine
 
 EVIDENCE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "evidence_vault.json")
+DELETED_EVIDENCE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "deleted_evidence.json")
 
 @dataclass
 class ForensicEvidencePackage:
@@ -45,10 +46,21 @@ class EvidenceManager:
     def __init__(self, vault_path: str = EVIDENCE_FILE) -> None:
         self.vault_path = vault_path
         self.vault: Dict[str, ForensicEvidencePackage] = {}
-        self.deleted_evidence_ids: Set[str] = set()
+        self.deleted_evidence_timestamps: Dict[str, float] = {}
         self._load_vault()
 
     def _load_vault(self) -> None:
+        if os.path.exists(DELETED_EVIDENCE_FILE):
+            try:
+                with open(DELETED_EVIDENCE_FILE, "r") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        self.deleted_evidence_timestamps = loaded
+                    elif isinstance(loaded, list):
+                        self.deleted_evidence_timestamps = {item: time.time() for item in loaded}
+            except Exception as e:
+                print(f"[EvidenceManager] Error loading deleted evidence file: {e}")
+
         if not os.path.exists(self.vault_path):
             return
         try:
@@ -113,6 +125,8 @@ class EvidenceManager:
             data = [pkg.to_dict() for pkg in self.vault.values()]
             with open(self.vault_path, "w") as f:
                 json.dump(data, f, indent=2)
+            with open(DELETED_EVIDENCE_FILE, "w") as f:
+                json.dump(self.deleted_evidence_timestamps, f, indent=2)
         except Exception as e:
             print(f"[EvidenceManager] Error saving vault: {e}")
 
@@ -120,15 +134,43 @@ class EvidenceManager:
         """Captures telemetry snapshot, computes SHA-256 checksum, and seals package for an incident (combining telemetry into a single bundle per incident)."""
         now = time.time()
 
-        # Search if an evidence bundle ALREADY EXISTS for this target IP / incident title in self.vault
+        # Check if evidence was deleted for this incident and no new alert has fired since deletion
+        del_ts = (
+            self.deleted_evidence_timestamps.get(incident.id) or
+            self.deleted_evidence_timestamps.get(f"EVD-{incident.id}") or
+            self.deleted_evidence_timestamps.get(f"evd-{incident.id}".lower())
+        )
+        if del_ts:
+            if incident.updated_at <= del_ts:
+                return None
+            else:
+                self.deleted_evidence_timestamps.pop(incident.id, None)
+                self.deleted_evidence_timestamps.pop(f"EVD-{incident.id}", None)
+
+        from pipeline.self_protection import asset_trust_manager, get_primary_host_ip
+        host_ip = get_primary_host_ip()
+
+        # Determine dynamic attacker source IP from incident, assets, or related detections
+        attacker_ip = incident.primary_source_ip
+        if not attacker_ip or attacker_ip in asset_trust_manager.local_ips or attacker_ip in ("127.0.0.1", "localhost", "::1"):
+            for asset in incident.affected_assets:
+                if asset not in asset_trust_manager.local_ips and asset not in ("127.0.0.1", "localhost", "::1") and ":" not in asset:
+                    attacker_ip = asset
+                    break
+        if not attacker_ip:
+            for det in incident.related_detections:
+                meta = det.get("metadata", {})
+                cand = meta.get("src_ip") or meta.get("attacker_ip") or meta.get("remote_ip")
+                if cand and cand not in asset_trust_manager.local_ips and cand not in ("127.0.0.1", "localhost", "::1"):
+                    attacker_ip = cand
+                    break
+
+        # Search if an evidence bundle ALREADY EXISTS for this exact incident or attacker IP
         existing_evd_id = None
         for pkg_id, pkg in self.vault.items():
-            pkg_title = pkg.payload.get("incident_title", "")
             pkg_assets = pkg.payload.get("affected_assets", [])
-            
             if (pkg.incident_id == incident.id or
-                pkg_title == incident.title or
-                any(a in pkg_assets for a in incident.affected_assets if a not in ("127.0.0.1", "localhost", "::1"))):
+                (attacker_ip and attacker_ip in pkg_assets and attacker_ip not in asset_trust_manager.local_ips)):
                 existing_evd_id = pkg_id
                 break
 
@@ -145,22 +187,29 @@ class EvidenceManager:
         listeners_captured = []
 
         affected_set = set(incident.affected_assets)
-        attacker_ip = incident.primary_source_ip or "192.168.1.5"
+        if attacker_ip:
+            affected_set.add(attacker_ip)
+
         is_icmp_incident = "ICMP" in incident.title or any("ICMP" in str(r) for r in incident.timeline)
 
         for ev in state_engine.events:
             # Strictly filter events related to incident assets
             if is_icmp_incident:
                 if ev.event_type == "PACKET":
-                    # For ICMP flood incidents, ONLY capture ICMP packets from attacker IP or target system
                     if ev.protocol != "ICMP":
                         continue
                     if ev.src_ip.startswith("fe80:") or ev.dst_ip.startswith("fe80:"):
                         continue
-                    if not (ev.src_ip == attacker_ip or ev.dst_ip == attacker_ip or ev.src_ip in affected_set or ev.dst_ip in affected_set):
+                    is_relevant = (
+                        (attacker_ip and (ev.src_ip == attacker_ip or ev.dst_ip == attacker_ip)) or
+                        ev.src_ip in affected_set or
+                        ev.dst_ip in affected_set or
+                        (not ev.src_ip.startswith("127.") and ev.src_ip not in asset_trust_manager.local_ips)
+                    )
+                    if not is_relevant:
                         continue
                 else:
-                    if not any(a in str(ev.details.get("message", "")) for a in ("ICMP", attacker_ip)):
+                    if not any(a in str(ev.details.get("message", "")) for a in ("ICMP", attacker_ip or "flood")):
                         continue
             else:
                 is_relevant = (
@@ -213,10 +262,12 @@ class EvidenceManager:
                     "pid": ev.pid
                 })
 
-        attacker_ip = incident.primary_source_ip or "192.168.1.5"
-        if (attacker_ip in ("127.0.0.1", "localhost", "::1", "192.168.1.13")) and packets_captured:
+        from pipeline.self_protection import get_primary_host_ip
+        host_ip = get_primary_host_ip()
+        attacker_ip = incident.primary_source_ip or "Remote IP"
+        if (attacker_ip in ("127.0.0.1", "localhost", "::1", host_ip)) and packets_captured:
             for p in packets_captured:
-                if p.get("src_ip") and p.get("src_ip") not in ("127.0.0.1", "localhost", "::1", "192.168.1.13"):
+                if p.get("src_ip") and p.get("src_ip") not in ("127.0.0.1", "localhost", "::1", host_ip):
                     attacker_ip = p.get("src_ip")
                     break
 
@@ -225,7 +276,7 @@ class EvidenceManager:
             "incident_title": incident.title,
             "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
             "attacker_ip": attacker_ip,
-            "affected_assets": ["192.168.1.13"] if is_icmp_incident else incident.affected_assets,
+            "affected_assets": [host_ip] if (is_icmp_incident and not incident.affected_assets) else incident.affected_assets,
             "mitre_stages": incident.mitre_stages,
             "packets": packets_captured if is_icmp_incident else packets_captured[:100],
             "logs": logs_captured,
@@ -262,7 +313,8 @@ class EvidenceManager:
     def delete_evidence(self, evidence_id: str) -> bool:
         clean_id = evidence_id.strip().lower()
         target_id = None
-        for k, pkg in self.vault.items():
+        now = time.time()
+        for k, pkg in list(self.vault.items()):
             if (
                 k.strip().lower() == clean_id 
                 or pkg.incident_id.strip().lower() == clean_id 
@@ -270,14 +322,20 @@ class EvidenceManager:
                 or pkg.evidence_id.strip().lower() == clean_id
             ):
                 target_id = k
+                self.deleted_evidence_timestamps[target_id] = now
+                self.deleted_evidence_timestamps[pkg.evidence_id] = now
+                self.deleted_evidence_timestamps[pkg.incident_id] = now
+                self.deleted_evidence_timestamps[f"EVD-{pkg.incident_id}"] = now
                 break
 
-        if target_id:
-            self.deleted_evidence_ids.add(target_id)
+        if target_id and target_id in self.vault:
             del self.vault[target_id]
-            self._save_vault()
-            return True
-        return False
+
+        self.deleted_evidence_timestamps[evidence_id] = now
+        self.deleted_evidence_timestamps[evidence_id.lower()] = now
+        self.deleted_evidence_timestamps[clean_id] = now
+        self._save_vault()
+        return True
 
     def get_all_evidence(self) -> List[Dict[str, Any]]:
         return [pkg.to_dict() for pkg in sorted(self.vault.values(), key=lambda p: p.timestamp)]

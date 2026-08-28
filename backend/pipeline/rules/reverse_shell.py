@@ -38,21 +38,25 @@ class ReverseShellRule(BaseRule):
                 is_uncommon = rport in uncommon_ports or (not is_private_ip(rip) and rport not in (80, 443, 53, 123))
 
                 if is_shell and is_uncommon:
+                    from analyzers.ip_intel import ensure_ipv4
+                    rip_v4 = ensure_ipv4(rip)
+                    src_ip_v4 = ensure_ipv4(ev.src_ip)
                     alerts.append(DetectionAlert(
-                        alert_id=f"revshell-{proc}-{rip}-{rport}-{int(current_time // 10)}",
+                        alert_id=f"revshell-{proc}-{rip_v4}-{rport}-{int(current_time // 10)}",
                         rule_name=self.name,
                         severity=self.severity,
-                        title=f"Reverse Shell Execution: {ev.process_name} -> {rip}:{rport}",
+                        title=f"Reverse Shell Execution: {ev.process_name} -> {rip_v4}:{rport}",
                         description=(
                             f"Shell interpreter '{ev.process_name}' (PID {ev.pid}) established an outbound "
-                            f"connection to remote address {rip}:{rport}. Strong indication of an active reverse shell."
+                            f"connection to remote address {rip_v4}:{rport}. Strong indication of an active reverse shell."
                         ),
                         datasource=self.datasource,
                         timestamp=current_time,
-                        affected_assets=[ev.process_name, rip, f"pid_{ev.pid}"],
+                        affected_assets=[ev.process_name, rip_v4, f"pid_{ev.pid}"],
                         mitre_tactics=self.mitre_tactics,
                         confidence=self.confidence,
                         remediation=self.recommended_remediation,
-                        metadata={"process": ev.process_name, "pid": ev.pid, "remote_ip": rip, "remote_port": rport}
+                        metadata={"src_ip": src_ip_v4, "process": ev.process_name, "pid": ev.pid, "remote_ip": rip_v4, "remote_port": rport}
                     ))
+
         return alerts

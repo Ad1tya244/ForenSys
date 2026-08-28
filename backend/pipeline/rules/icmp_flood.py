@@ -26,6 +26,7 @@ class ICMPFloodRule(BaseRule):
         window_sec = config.get("icmp_window_sec", 10.0)
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        from analyzers.ip_intel import ensure_ipv4
         for src_ip, count in snapshot.icmp_packets_by_src.items():
             if src_ip in ("127.0.0.1", "localhost", "::1"):
                 continue
@@ -33,18 +34,23 @@ class ICMPFloodRule(BaseRule):
                 first_seen = snapshot.first_seen_by_src.get(src_ip, current_time - 1.2)
                 mttd_sec = max(0.1, round(current_time - first_seen, 2))
 
+                from pipeline.self_protection import get_primary_host_ip
+                host_ip = get_primary_host_ip()
+
+                src_ip_v4 = ensure_ipv4(src_ip)
                 alerts.append(DetectionAlert(
-                    alert_id=f"icmp-flood-{src_ip}-{int(current_time // 10)}",
+                    alert_id=f"icmp-flood-{src_ip_v4}-{int(current_time // 10)}",
                     rule_name=self.name,
                     severity=self.severity,
-                    title=f"ICMP Flood Detected from {src_ip}",
-                    description=f"Attacker IP {src_ip} generated {count} ICMP Echo Requests targeting 192.168.1.13 within {window_sec}s (threshold: {threshold}, MTTD: {mttd_sec}s).",
+                    title=f"ICMP Flood Detected from {src_ip_v4}",
+                    description=f"Attacker IP {src_ip_v4} generated {count} ICMP Echo Requests targeting {host_ip} within {window_sec}s (threshold: {threshold}, MTTD: {mttd_sec}s).",
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=["192.168.1.13"],
+                    affected_assets=[src_ip_v4, host_ip],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"src_ip": src_ip, "attacker_ip": src_ip, "dst_ip": "192.168.1.13", "target_ip": "192.168.1.13", "count": count, "window_sec": window_sec, "mttd_sec": mttd_sec}
+                    metadata={"src_ip": src_ip_v4, "attacker_ip": src_ip_v4, "dst_ip": host_ip, "target_ip": host_ip, "count": count, "window_sec": window_sec, "mttd_sec": mttd_sec}
                 ))
+
         return alerts

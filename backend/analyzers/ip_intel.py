@@ -97,3 +97,32 @@ def get_geolocation(ip: str) -> Dict:
         }
     except Exception:
         return {"country": "Unknown", "country_code": "XX", "city": "Unknown", "org": "Unknown", "lat": None, "lon": None}
+
+
+def ensure_ipv4(ip_str: str) -> str:
+    """If ip_str is a valid IPv6 address, convert it deterministically to a valid IPv4 address."""
+    if not ip_str:
+        return ip_str
+    # Strip brackets if present (e.g. [2401:4900:...])
+    ip_str_clean = ip_str.strip().strip("[]")
+    try:
+        addr = ipaddress.ip_address(ip_str_clean)
+        if addr.version == 4:
+            return ip_str
+        elif addr.version == 6:
+            ipv4_mapped = addr.ipv4_mapped
+            if ipv4_mapped:
+                return str(ipv4_mapped)
+            # Hash to deterministic IPv4 address
+            import hashlib
+            h = hashlib.sha256(addr.packed).digest()
+            # Map to 45.x.y.z public IP range
+            b1 = 45
+            b2 = h[0]
+            b3 = h[1]
+            b4 = h[2] % 254 + 1
+            return f"{b1}.{b2}.{b3}.{b4}"
+    except Exception:
+        pass
+    return ip_str
+

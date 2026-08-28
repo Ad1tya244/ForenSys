@@ -26,21 +26,24 @@ class DataExfiltrationRule(BaseRule):
         window_sec = config.get("data_exfiltration_window_sec", 30.0)
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        from analyzers.ip_intel import ensure_ipv4
         for dst_ip, total_bytes in snapshot.outbound_bytes_by_dst.items():
             if dst_ip and not is_private_ip(dst_ip) and total_bytes >= limit_bytes:
+                dst_ip_v4 = ensure_ipv4(dst_ip)
                 mb = total_bytes / (1024 * 1024)
                 alerts.append(DetectionAlert(
-                    alert_id=f"exfil-{dst_ip}-{int(current_time // 30)}",
+                    alert_id=f"exfil-{dst_ip_v4}-{int(current_time // 30)}",
                     rule_name=self.name,
                     severity=self.severity,
-                    title=f"Potential Data Exfiltration to {dst_ip}",
-                    description=f"Outbound network transfer of {mb:.2f} MB to external IP {dst_ip} in {window_sec}s exceeded threshold ({limit_bytes / (1024*1024):.1f} MB).",
+                    title=f"Potential Data Exfiltration to {dst_ip_v4}",
+                    description=f"Outbound network transfer of {mb:.2f} MB to external IP {dst_ip_v4} in {window_sec}s exceeded threshold ({limit_bytes / (1024*1024):.1f} MB).",
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=["localhost", dst_ip],
+                    affected_assets=["localhost", dst_ip_v4],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"dst_ip": dst_ip, "transferred_bytes": total_bytes, "transferred_mb": round(mb, 2)}
+                    metadata={"dst_ip": dst_ip_v4, "transferred_bytes": total_bytes, "transferred_mb": round(mb, 2)}
                 ))
+
         return alerts

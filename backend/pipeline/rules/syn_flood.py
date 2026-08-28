@@ -25,20 +25,23 @@ class SYNFloodRule(BaseRule):
         window_sec = config.get("syn_window_sec", 10.0)
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        from analyzers.ip_intel import ensure_ipv4
         for src_ip, count in snapshot.syn_packets_by_src.items():
             if count >= threshold:
+                src_ip_v4 = ensure_ipv4(src_ip)
                 alerts.append(DetectionAlert(
-                    alert_id=f"syn-flood-{src_ip}-{int(current_time // 10)}",
+                    alert_id=f"syn-flood-{src_ip_v4}-{int(current_time // 10)}",
                     rule_name=self.name,
                     severity=self.severity,
-                    title=f"TCP SYN Flood from {src_ip}",
-                    description=f"Source IP {src_ip} sent {count} TCP SYN packets within {window_sec}s without completing handshakes.",
+                    title=f"TCP SYN Flood from {src_ip_v4}",
+                    description=f"Source IP {src_ip_v4} sent {count} TCP SYN packets within {window_sec}s without completing handshakes.",
                     datasource=self.datasource,
                     timestamp=current_time,
-                    affected_assets=[src_ip, "localhost"],
+                    affected_assets=[src_ip_v4, "localhost"],
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"src_ip": src_ip, "syn_count": count}
+                    metadata={"src_ip": src_ip_v4, "syn_count": count}
                 ))
+
         return alerts

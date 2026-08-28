@@ -215,6 +215,10 @@ export interface RemediationActionLog {
   status: 'success' | 'failed' | 'rolled_back' | 'skipped';
   resultDetails: any;
   rollbackInfo: any;
+  src_ip?: string;
+  dst_ip?: string;
+  affectedTarget?: string;
+  affected_assets?: string[];
 }
 
 export interface SelfProtectionAuditEntry {

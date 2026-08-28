@@ -116,11 +116,11 @@ const renderStructuredPayload = (item: EvidenceItem) => {
       const displayPackets = (isIcmpIncident && icmpOrAttackerPkts.length > 0) ? icmpOrAttackerPkts : (icmpOrAttackerPkts.length > 0 ? icmpOrAttackerPkts : packets);
 
       const firstPkt = displayPackets[0] || packets[0] || {};
-      const srcIp = p.attacker_ip || (firstPkt.src_ip && firstPkt.src_ip !== '192.168.1.13' ? firstPkt.src_ip : '192.168.1.5');
+      const srcIp = p.attacker_ip || firstPkt.src_ip || 'Remote IP';
       
-      let dstIp = p.affected_assets?.[0] || firstPkt.dst_ip || '192.168.1.13';
-      if (!dstIp || dstIp.includes(':') || dstIp === '0.0.0.0' || dstIp === 'localhost') {
-        dstIp = '192.168.1.13';
+      let dstIp = p.affected_assets?.[0] || firstPkt.dst_ip || 'Local Host';
+      if ((!dstIp || dstIp === '0.0.0.0' || dstIp === 'localhost') && firstPkt.dst_ip) {
+        dstIp = firstPkt.dst_ip;
       }
       
       const proto = isIcmpIncident ? 'ICMP' : (firstPkt.protocol || p.protocol || 'TCP');

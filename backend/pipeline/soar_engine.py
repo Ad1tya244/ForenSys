@@ -95,27 +95,51 @@ class SOAREngine:
         # Automatic remediation triggers based on incident severity and MITRE stages
         actions_to_take = []
         
+        # Determine dynamic attacker source IP target
         threat_name = incident.title if incident.title else "ICMP Flood Detection"
+        from pipeline.self_protection import asset_trust_manager
+        target_ip = incident.primary_source_ip
+        if not target_ip or target_ip in ("127.0.0.1", "localhost", "::1") or target_ip in asset_trust_manager.local_ips:
+            for asset in incident.affected_assets:
+                if asset not in asset_trust_manager.local_ips and asset not in ("127.0.0.1", "localhost", "::1") and ":" not in asset:
+                    target_ip = asset
+                    break
+        if not target_ip:
+            for det in incident.related_detections:
+                meta = det.get("metadata", {})
+                cand = meta.get("src_ip") or meta.get("attacker_ip") or meta.get("remote_ip")
+                if cand and cand not in asset_trust_manager.local_ips and cand not in ("127.0.0.1", "localhost", "::1"):
+                    target_ip = cand
+                    break
 
-        # 1. Reverse Shell / Critical C2 -> Kill Process & Block IP
+        # Check enabled SOAR playbook rules and incident severity before queuing IP block
+        should_block = False
         if incident.severity == "critical" or "Reverse Shell" in incident.title or "Command and Control" in incident.mitre_stages:
-            if incident.primary_source_ip and incident.primary_source_ip not in ("127.0.0.1", "localhost", "::1"):
-                actions_to_take.append(("block_ip", incident.primary_source_ip, threat_name))
-            if incident.primary_dest_ip and incident.primary_dest_ip not in ("127.0.0.1", "localhost", "::1"):
+            should_block = True
+        else:
+            for rule in (soar_playbook_rules or []):
+                if not rule.get("enabled", True):
+                    continue
+                r_name = rule.get("name", "").lower()
+                r_action = rule.get("action", "").lower()
+                inc_title = incident.title.lower()
+                
+                if (r_name in inc_title or 
+                    ("icmp" in r_name and "icmp" in inc_title) or 
+                    ("scan" in r_name and "scan" in inc_title) or
+                    ("exfil" in r_name and "exfil" in inc_title)):
+                    if r_action in ("block", "contain", "isolate"):
+                        should_block = True
+                        break
+
+        if should_block and target_ip and target_ip not in ("127.0.0.1", "localhost", "::1") and target_ip not in asset_trust_manager.local_ips:
+            actions_to_take.append(("block_ip", target_ip, threat_name))
+
+        if incident.severity == "critical" or "Reverse Shell" in incident.title or "Command and Control" in incident.mitre_stages:
+            if incident.primary_dest_ip and incident.primary_dest_ip not in ("127.0.0.1", "localhost", "::1") and incident.primary_dest_ip not in asset_trust_manager.local_ips:
                 actions_to_take.append(("block_ip", incident.primary_dest_ip, threat_name))
             if incident.primary_process:
                 actions_to_take.append(("kill_process", incident.primary_process, threat_name))
-
-        # 2. Port Scan / ICMP Flood -> Single Perimeter Block IP
-        elif "Port Scan" in incident.title or "ICMP Flood" in incident.title or "Impact" in incident.mitre_stages or "Reconnaissance" in incident.mitre_stages:
-            if incident.primary_source_ip and incident.primary_source_ip not in ("127.0.0.1", "localhost", "::1"):
-                actions_to_take.append(("block_ip", incident.primary_source_ip, threat_name))
-
-        # 3. Data Exfiltration -> Block IP & Capture Metadata
-        elif "Exfiltration" in incident.mitre_stages:
-            if incident.primary_dest_ip:
-                actions_to_take.append(("block_ip", incident.primary_dest_ip, threat_name))
-            actions_to_take.append(("capture_metadata", incident.primary_process or "system", threat_name))
 
         # Always trigger analyst notification and PCAP capture for High/Critical incidents
         if incident.severity in ("high", "critical"):
@@ -185,7 +209,7 @@ class SOAREngine:
                 self.pf_rules.append(f"block drop in quick from {target}")
                 status = "success"
                 result_details = {"message": f"PF rule 'block drop in quick from {target}' applied."}
-                rollback_info["command"] = f"pfctl -t temp_block -T delete {target}"
+                rollback_info["command"] = f"unblock_ip {target}"
 
             elif action_type == "kill_process":
                 # Simulated / process kill log
@@ -295,11 +319,13 @@ class SOAREngine:
         return None
 
     def clear_history(self) -> None:
-        # Clear auto remediation execution logs without removing active perimeter firewall blocks
-        self.remediation_history = [log for log in self.remediation_history if log.incident_id == "MANUAL"]
+        """Clears all remediation execution logs and resets active blocked IPs."""
+        self.remediation_history.clear()
+        self.blocked_ips.clear()
+        self.pf_rules.clear()
         try:
             with open(self.log_path, "w") as f:
-                json.dump([log.to_dict() for log in self.remediation_history], f, indent=2)
+                json.dump([], f, indent=2)
         except Exception as e:
             print(f"[SOAREngine] Error clearing history: {e}")
 

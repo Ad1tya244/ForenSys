@@ -100,18 +100,22 @@ class BehaviorStateEngine:
             if ev.src_ip and ev.src_ip not in first_seen_by_src:
                 first_seen_by_src[ev.src_ip] = ev.timestamp
             
-            # ICMP Flood tracking (only count Echo Requests from remote/attacking IPs, never local machine IP)
-            from pipeline.self_protection import asset_trust_manager
+            # ICMP Flood tracking (count Echo Requests from any non-loopback source IP)
             if (
                 ev.protocol == "ICMP" 
                 and ev.src_ip 
-                and ev.src_ip not in asset_trust_manager.local_ips 
                 and not ev.src_ip.startswith("127.")
+                and ev.src_ip not in ("localhost", "::1")
             ):
-                icmp_type = ev.details.get("icmp_type", 8)
+                icmp_type = ev.details.get("icmp_type")
                 info_str = str(ev.details.get("info", "")).lower()
-                # Type 8 is Echo Request. Type 0 is Echo Reply.
-                is_reply = ("type=0" in info_str) or ("echo reply" in info_str) or (icmp_type == 0)
+                # ICMP Echo Requests: IPv4 Type 8, ICMPv6 Type 128
+                # ICMP Echo Replies: IPv4 Type 0, ICMPv6 Type 129
+                is_reply = False
+                if icmp_type is not None:
+                    is_reply = (icmp_type in (0, 129))
+                else:
+                    is_reply = ("type=0" in info_str) or ("echo reply" in info_str)
                 if not is_reply:
                     icmp_by_src[ev.src_ip] += ev.packet_count
 
@@ -194,3 +198,7 @@ class BehaviorStateEngine:
                 for name, snap in snaps.items()
             }
         }
+
+    def clear(self) -> None:
+        """Clears all buffered telemetry events."""
+        self.events.clear()
