@@ -132,4 +132,4 @@ JWT_SECRET_KEY=your_jwt_secret_key
 ---
 
 ## 📄 License
-This project is for security analysis, EDR/XDR engineering, and SOC portfolio purposes.
+This project is for security analysis, EDR/XDR engineering, and SOC portfolio purposes only.
