@@ -3,7 +3,7 @@ Process collector — enumerates running processes and flags anomalies.
 """
 
 import psutil
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Known offensive security / exploit tools — flag if seen running
 SUSPICIOUS_NAMES = {
@@ -21,14 +21,22 @@ HIGH_CPU_PCT = 80.0
 HIGH_MEM_PCT = 40.0
 
 
-def get_processes() -> List[Dict]:
+def get_processes(limit: Optional[int] = 50) -> List[Dict]:
+    """Enumerate processes (with parent info). `limit` keeps the top-N by CPU; pass None for every process."""
     procs: List[Dict] = []
 
-    attrs = ["pid", "name", "cpu_percent", "memory_percent", "status", "username"]
+    attrs = ["pid", "ppid", "name", "cpu_percent", "memory_percent", "status", "username"]
 
+    infos = []
     for proc in psutil.process_iter(attrs):
         try:
-            info = proc.info
+            infos.append(proc.info)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    names_by_pid = {i["pid"]: (i.get("name") or "unknown") for i in infos}
+
+    for info in infos:
+        try:
             name_lower = (info.get("name") or "").lower()
             cpu = round(info.get("cpu_percent") or 0.0, 1)
             mem = round(info.get("memory_percent") or 0.0, 2)
@@ -39,6 +47,8 @@ def get_processes() -> List[Dict]:
             procs.append(
                 {
                     "pid": info["pid"],
+                    "ppid": info.get("ppid"),
+                    "parent_name": names_by_pid.get(info.get("ppid"), "unknown"),
                     "name": info.get("name") or "unknown",
                     "cpu_percent": cpu,
                     "memory_percent": mem,
@@ -51,5 +61,5 @@ def get_processes() -> List[Dict]:
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
-    # Return top 50 by CPU usage
-    return sorted(procs, key=lambda p: p["cpu_percent"], reverse=True)[:50]
+    ranked = sorted(procs, key=lambda p: p["cpu_percent"], reverse=True)
+    return ranked if limit is None else ranked[:limit]

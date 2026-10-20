@@ -1,6 +1,6 @@
 {
   "attack_simulation_mode": false,
-  "icmp_threshold": 100,
+  "icmp_threshold": 50,
   "icmp_window_sec": 10.0,
   "portscan_threshold": 20,
   "portscan_window_sec": 15.0,
@@ -11,8 +11,8 @@
   "dns_beacon_max_variance": 0.2,
   "auth_failure_limit": 3,
   "auth_window_sec": 60,
-  "data_exfiltration_bytes": 52428800,
-  "data_exfiltration_window_sec": 30,
+  "data_exfiltration_bytes": 104857600,
+  "data_exfiltration_window_sec": 20,
   "uncommon_external_ports": [
     4444,
     1337,
@@ -78,5 +78,10 @@
     "configd",
     "opendirectoryd",
     "trustd"
-  ]
+  ],
+  "auto_remediation_enabled": true,
+  "syn_flood_max_ports": 5,
+  "auth_service_syn_threshold": 15,
+  "exfil_monitor_private_dst": false,
+  "data_exfiltration_upload_ratio": 0.75
 }

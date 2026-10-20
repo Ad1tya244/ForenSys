@@ -84,6 +84,7 @@ export default function DashboardLayout({
     markAllRead,
     connectBackend,
     backendConnected,
+    backendChecked,
     currentUser,
     hasPermission,
     logout,
@@ -94,12 +95,15 @@ export default function DashboardLayout({
     connectBackend();
   }, [connectBackend]);
 
-  // Protect dashboard routes
+  // Protect dashboard routes. `connectBackend()` restores the session asynchronously (cookie refresh, then
+  // localStorage), so `currentUser` is briefly null on a fresh page load even when the user IS logged in.
+  // Wait for that check to finish (backendChecked) before redirecting, otherwise every hard reload bounces
+  // through /login and re-triggers a websocket reconnect + token refresh for no reason.
   useEffect(() => {
-    if (mounted && !currentUser) {
+    if (mounted && backendChecked && !currentUser) {
       router.push('/login');
     }
-  }, [mounted, currentUser, router]);
+  }, [mounted, backendChecked, currentUser, router]);
 
   // Sidebar navigation permissions mapping
   const navItemPermissions: Record<string, string> = {

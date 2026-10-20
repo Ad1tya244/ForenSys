@@ -4,6 +4,7 @@ Tests Incident Correlation Engine, Cumulative Scoring, and MITRE Kill Chain Mapp
 """
 
 import sys
+import unittest
 import os
 import time
 
@@ -62,6 +63,11 @@ def test_phase3():
     print("✓ Cumulative Risk Scoring & Severity Mapping verified")
     print("✓ MITRE ATT&CK Kill Chain Synthesis verified")
     print("✓ Phase 3 All Verification Tests Passed Successfully!\n")
+
+class Phase3Test(unittest.TestCase):
+    def test_phase3(self):
+        globals()["test_phase3"]()
+
 
 if __name__ == "__main__":
     test_phase3()

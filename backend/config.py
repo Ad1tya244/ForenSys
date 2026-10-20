@@ -11,19 +11,24 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "attack_simulation_mode": False,
-    "icmp_threshold": 100,
+    "auto_remediation_enabled": True,   # run the detect -> contain -> evidence workflow automatically
+    "icmp_threshold": 50,
     "icmp_window_sec": 10,
     "portscan_threshold": 20,
     "portscan_window_sec": 15,
     "syn_threshold": 50,
     "syn_window_sec": 10,
+    "syn_flood_max_ports": 5,           # SYNs spread over more ports than this are a port scan, not a flood
+    "auth_service_syn_threshold": 15,   # new connections to one login service (ssh/ftp/rdp/...) from one IP in the auth window
+    "exfil_monitor_private_dst": False, # True: also flag big uploads to LAN hosts (handy for LAN-only exfil demos)
     "dns_beacon_window_sec": 60,
     "dns_beacon_min_queries": 5,
     "dns_beacon_max_variance": 0.2,
     "auth_failure_limit": 3,
     "auth_window_sec": 60,
-    "data_exfiltration_bytes": 52428800,  # 50 MB
-    "data_exfiltration_window_sec": 30,
+    "data_exfiltration_bytes": 104857600,  # 100 MB of UPLOAD specifically (not raw volume - see upload_ratio)
+    "data_exfiltration_window_sec": 20,
+    "data_exfiltration_upload_ratio": 0.75,  # min share of peer traffic that must be outbound (downloads are receive-heavy)
     "uncommon_external_ports": [4444, 1337, 31337, 5555, 6666, 6667, 9001, 9050, 1080, 12345, 27374, 54321, 65535, 7777, 2222, 14444],
     "shell_executables": ["bash", "zsh", "sh", "python", "python3", "perl", "ruby"],
     "suspicious_parent_chains": [

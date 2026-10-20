@@ -4,6 +4,7 @@ Tests Forensic Evidence Collection, SHA-256 Checksum Hashing, and Vault Persiste
 """
 
 import sys
+import unittest
 import os
 import time
 
@@ -24,7 +25,8 @@ def test_phase4():
     state_engine = BehaviorStateEngine()
     rule_engine = RuleEngine()
     correlation_engine = IncidentCorrelationEngine()
-    evidence_manager = EvidenceManager(vault_path=os.path.join(os.path.dirname(__file__), "test_vault.json"))
+    evidence_manager = EvidenceManager(vault_path=os.path.join(os.path.dirname(__file__), "test_vault.json"),
+                                       artifacts_dir=os.path.join(os.path.dirname(__file__), "test_evidence"))
 
     now = time.time()
 
@@ -52,11 +54,18 @@ def test_phase4():
     # Clean up test vault file
     if os.path.exists(os.path.join(os.path.dirname(__file__), "test_vault.json")):
         os.remove(os.path.join(os.path.dirname(__file__), "test_vault.json"))
+    import shutil
+    shutil.rmtree(os.path.join(os.path.dirname(__file__), "test_evidence"), ignore_errors=True)
 
     print("✓ Automated Evidence Generation verified")
     print("✓ SHA-256 Integrity Checksum verified")
     print("✓ Evidence Lifecycle (Captured -> Hashed -> Sealed) verified")
     print("✓ Phase 4 All Verification Tests Passed Successfully!\n")
+
+class Phase4Test(unittest.TestCase):
+    def test_phase4(self):
+        globals()["test_phase4"]()
+
 
 if __name__ == "__main__":
     test_phase4()

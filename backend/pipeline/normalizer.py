@@ -3,6 +3,7 @@ ForenSys Event Normalizer
 Converts raw telemetry collections into unified NormalizedEvent objects.
 """
 
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -55,20 +56,32 @@ class NormalizedEvent:
             "details": self.details,
         }
 
+_LOG_SRC_IP_RE = re.compile(r"\bfrom\s+((?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{3,39})\b")
+_ANY_IPV4_RE = re.compile(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])")
+_AUTH_PROCESSES = ("sshd", "sudo", "su", "loginwindow", "SecurityAgent", "screensharingd")
+_AUTH_FAIL_WORDS = ("fail", "denied", "invalid", "incorrect", "failure", "authentication error", "not allowed",
+                    "too many authentication", "bad password", "wrong password")
+_AUTH_OK_WORDS = ("accepted", "success", "session opened", "succeeded")
+_LOG_RHOST_RE = re.compile(r"rhost=((?:\d{1,3}\.){3}\d{1,3})")
+_DNS_RE = re.compile(r"(?:query|Query)[^A-Za-z0-9]*(?:0x[0-9a-fA-F]+\s+)?(?:[A-Z]{1,5}\s+)?([A-Za-z0-9._-]+\.[A-Za-z]{2,})\.?\s*$")
+
+
 class EventNormalizer:
     """Standardizes incoming telemetry data dictionaries into NormalizedEvent lists."""
     
     @staticmethod
     def normalize_packet(packet: Dict[str, Any], now: Optional[float] = None) -> NormalizedEvent:
-        ts = now if now else time.time()
+        # Prefer the capture time stamped by the sniffer so detection latency/MTTD is measured from the wire
+        ts = float(packet.get("ts") or 0) or (now if now else time.time())
         proto = str(packet.get("protocol", "UNKNOWN")).upper()
         info = str(packet.get("info", ""))
         dns_q = ""
         if "DNS" in info or "Standard query" in info:
             proto = "DNS"
-            parts = info.split()
-            if len(parts) > 1:
-                dns_q = parts[-1]
+            # Only *queries* count (responses would double every beacon timestamp)
+            m = _DNS_RE.search(info.strip())
+            if m:
+                dns_q = m.group(1).lower()
 
         return NormalizedEvent(
             event_id=packet.get("id") or str(uuid.uuid4()),
@@ -76,8 +89,8 @@ class EventNormalizer:
             event_type="PACKET",
             src_ip=packet.get("src_ip", ""),
             dst_ip=packet.get("dst_ip", ""),
-            src_port=int(packet.get("src_port", 0)),
-            dst_port=int(packet.get("dst_port", 0)),
+            src_port=int(packet.get("src_port", 0) or 0),
+            dst_port=int(packet.get("dst_port", 0) or 0),
             protocol=proto,
             packet_count=1,
             byte_count=int(packet.get("length", 0)),
@@ -125,23 +138,40 @@ class EventNormalizer:
         
         auth_fail = False
         auth_succ = False
-        
-        if level in ("error", "warn") and proc in ("sshd", "sudo", "loginwindow", "SecurityAgent"):
-            if any(k in msg for k in ("fail", "denied", "invalid", "incorrect", "failure")):
+
+        # sshd shows up as "sshd" or (macOS 15+/OpenSSH split) "sshd-session"; level is irrelevant, the text decides
+        is_auth_proc = any(proc == p or proc.startswith(p + "-") for p in _AUTH_PROCESSES)
+        if is_auth_proc:
+            if any(k in msg for k in _AUTH_FAIL_WORDS) and not any(k in msg for k in ("accepted", "session opened")):
                 auth_fail = True
-        if proc in ("sshd", "sudo", "loginwindow", "SecurityAgent"):
-            if any(k in msg for k in ("accepted", "success", "session opened", "succeeded")):
+            if any(k in msg for k in _AUTH_OK_WORDS) and not auth_fail:
                 auth_succ = True
+
+        # Pull the remote (attacker) address out of sshd/sudo style messages so it can be attributed and contained
+        src_ip = ""
+        if auth_fail or auth_succ:
+            raw_msg = str(log_item.get("message", ""))
+            m = _LOG_SRC_IP_RE.search(raw_msg) or _LOG_RHOST_RE.search(raw_msg) or _ANY_IPV4_RE.search(raw_msg)
+            if m:
+                src_ip = m.group(1)
+
+        # One SSH login attempt writes several lines (Invalid user / PAM error / Failed ...) sharing the client port:
+        # remember it so the state engine counts the attempt once.
+        details = log_item
+        port_m = re.search(r"\bport\s+(\d{2,5})\b", str(log_item.get("message", "")))
+        if auth_fail and src_ip and port_m:
+            details = {**log_item, "attempt_key": f"{src_ip}:{port_m.group(1)}"}
 
         return NormalizedEvent(
             event_id=log_item.get("id") or str(uuid.uuid4()),
             timestamp=ts,
             event_type="LOG",
+            src_ip=src_ip,
             process_name=proc,
             pid=log_item.get("pid"),
             auth_failure=auth_fail,
             auth_success=auth_succ,
-            details=log_item
+            details=details
         )
 
     @staticmethod

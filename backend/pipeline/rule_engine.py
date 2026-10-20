@@ -42,6 +42,11 @@ class RuleEngine:
 
         return self.rules
 
+    def reset_episodes(self) -> None:
+        """Forget ongoing attack episodes so a renewed attack is reported as a new alert/incident."""
+        for r in self.rules:
+            r._episodes.clear()
+
     def evaluate_all(self, state_engine: BehaviorStateEngine, config: Dict[str, Any], now: Optional[float] = None) -> List[DetectionAlert]:
         """Runs all discovered rules against the behavior state engine and returns generated alerts."""
         alerts: List[DetectionAlert] = []
@@ -80,8 +85,8 @@ class RuleEngine:
                 threshold = cfg.get("dns_beacon_min_queries", 5)
                 window_sec = cfg.get("dns_beacon_window_sec", 60.0)
             elif "exfiltration" in name_lower or rule_id == "RULE-06":
-                threshold = cfg.get("data_exfiltration_bytes", 52428800)
-                window_sec = cfg.get("data_exfiltration_window_sec", 30.0)
+                threshold = cfg.get("data_exfiltration_bytes", 104857600)
+                window_sec = cfg.get("data_exfiltration_window_sec", 20.0)
                 
             catalog.append({
                 "id": rule_id,

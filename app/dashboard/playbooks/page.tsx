@@ -34,7 +34,7 @@ export default function FirewallRulesPage() {
             Firewall Rules & IP Blocklist
           </h1>
           <p className="text-muted-foreground text-sm">
-            Active macOS PF firewall rules, active perimeter blocklists, and defense configurations
+            Perimeter blocklist: the packet sniffer ignores listed IPs until you manually unblock them (no OS firewall changes)
           </p>
         </div>
         <Badge className="bg-accent/15 text-accent border-accent/30 px-3 py-1 font-mono text-xs">
@@ -53,8 +53,8 @@ export default function FirewallRulesPage() {
           <p className="text-2xl font-bold text-foreground mt-1 font-mono">{ruleCatalog.length || 10}</p>
         </div>
         <div className="glass p-4 rounded-lg border border-green-500/30">
-          <p className="text-xs text-green-400">Firewall Engine Status</p>
-          <p className="text-2xl font-bold text-green-300 mt-1 font-mono">ENFORCING</p>
+          <p className="text-xs text-green-400">Blocklist Engine Status</p>
+          <p className="text-2xl font-bold text-green-300 mt-1 font-mono">ACTIVE</p>
         </div>
       </div>
 
@@ -122,7 +122,13 @@ export default function FirewallRulesPage() {
                     </td>
                     <td className="p-3 text-foreground">{item.reason}</td>
                     <td className="p-3 text-muted-foreground">{item.incident_id || 'N/A'}</td>
-                    <td className="p-3 text-muted-foreground">{item.blocked_at}</td>
+                    <td className="p-3 text-muted-foreground">
+                      {!isBlocked && item.released_at ? (
+                        <span title={`Blocked: ${item.blocked_at}`}>Unblocked: {item.released_at}</span>
+                      ) : (
+                        item.blocked_at
+                      )}
+                    </td>
                     <td className="p-3 text-right">
                       {isBlocked ? (
                         <Button

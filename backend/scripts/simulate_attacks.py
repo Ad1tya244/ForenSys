@@ -31,8 +31,10 @@ def run_simulation():
     state_engine = BehaviorStateEngine()
     rule_engine = RuleEngine()
     correlation_engine = IncidentCorrelationEngine()
-    evidence_manager = EvidenceManager(vault_path=os.path.join(os.path.dirname(__file__), "sim_vault.json"))
-    soar_engine = SOAREngine(log_path=os.path.join(os.path.dirname(__file__), "sim_remediation.json"))
+    evidence_manager = EvidenceManager(vault_path=os.path.join(os.path.dirname(__file__), "sim_vault.json"),
+                                       artifacts_dir=os.path.join(os.path.dirname(__file__), "sim_evidence"))
+    soar_engine = SOAREngine(log_path=os.path.join(os.path.dirname(__file__), "sim_remediation.json"),
+                             registry_path=os.path.join(os.path.dirname(__file__), "sim_perimeter_registry.json"))
 
     now = time.time()
     attacker_ip = "198.51.100.44"
@@ -136,7 +138,11 @@ def run_simulation():
         assert rolled.status == "rolled_back", "Rollback failed"
 
     # Cleanup temp files
-    for tmp in [os.path.join(os.path.dirname(__file__), "sim_vault.json"), os.path.join(os.path.dirname(__file__), "sim_remediation.json")]:
+    import shutil
+    shutil.rmtree(os.path.join(os.path.dirname(__file__), "sim_evidence"), ignore_errors=True)
+    for tmp in [os.path.join(os.path.dirname(__file__), "sim_vault.json"),
+               os.path.join(os.path.dirname(__file__), "sim_remediation.json"),
+               os.path.join(os.path.dirname(__file__), "sim_perimeter_registry.json")]:
         if os.path.exists(tmp):
             os.remove(tmp)
 

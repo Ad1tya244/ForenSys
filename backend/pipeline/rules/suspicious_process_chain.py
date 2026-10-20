@@ -16,7 +16,7 @@ class SuspiciousProcessChainRule(BaseRule):
     severity = "high"
     mitre_tactics = ["Execution", "Defense Evasion"]
     confidence = 0.88
-    recommended_remediation = "Terminate child process execution tree and quarantine document/binary source"
+    recommended_remediation = "Flag the child process tree as contained and review the document/binary source"
 
     def evaluate(self, state_engine: BehaviorStateEngine, config: Dict[str, Any], now: Optional[float] = None) -> List[DetectionAlert]:
         alerts: List[DetectionAlert] = []
@@ -30,14 +30,21 @@ class SuspiciousProcessChainRule(BaseRule):
             {"parent": "python", "child": "nc"}
         ])
 
-        snapshot = state_engine.get_window_snapshot(30.0, current_time)
-        for parent, child in snapshot.process_chains:
+        reported = set()
+        for ev in state_engine.recent_events(30.0, current_time):
+            if ev.event_type != "PROCESS" or ev.parent_process == "unknown":
+                continue
+            parent, child = ev.parent_process, ev.process_name
             for chain in suspicious_chains:
                 p_match = chain["parent"].lower() in parent.lower()
-                c_match = chain["child"].lower() in child.lower()
+                c_match = chain["child"].lower() == child.lower()
                 if p_match and c_match:
+                    if (parent, child, ev.pid) in reported:
+                        break
+                    reported.add((parent, child, ev.pid))
+                    episode = self.episode_id(f"procchain-{parent}-{child}-{ev.pid}", current_time)
                     alerts.append(DetectionAlert(
-                        alert_id=f"procchain-{parent}-{child}-{int(current_time // 30)}",
+                        alert_id=f"procchain-{parent}-{child}-{ev.pid}-{episode}",
                         rule_name=self.name,
                         severity=self.severity,
                         title=f"Suspicious Process Chain: {parent} -> {child}",
@@ -48,6 +55,11 @@ class SuspiciousProcessChainRule(BaseRule):
                         mitre_tactics=self.mitre_tactics,
                         confidence=self.confidence,
                         remediation=self.recommended_remediation,
-                        metadata={"parent_process": parent, "child_process": child}
+                        metadata={
+                            "parent_process": parent, "child_process": child, "process": child, "pid": ev.pid,
+                            "ppid": ev.ppid, "quarantine_process": child, "first_seen": ev.timestamp,
+                            "detected_at": current_time, "mttd_sec": max(0.1, round(current_time - ev.timestamp, 2)),
+                            "attack_type": "process_chain",
+                        }
                     ))
         return alerts

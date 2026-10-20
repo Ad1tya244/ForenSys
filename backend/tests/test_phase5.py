@@ -4,6 +4,7 @@ Tests SOAR Auto-Remediation Engine, Action Execution, Log Recording, and Rollbac
 """
 
 import sys
+import unittest
 import os
 import time
 
@@ -24,7 +25,8 @@ def test_phase5():
     state_engine = BehaviorStateEngine()
     rule_engine = RuleEngine()
     correlation_engine = IncidentCorrelationEngine()
-    soar_engine = SOAREngine(log_path=os.path.join(os.path.dirname(__file__), "test_remediation.json"))
+    soar_engine = SOAREngine(log_path=os.path.join(os.path.dirname(__file__), "test_remediation.json"),
+                             registry_path=os.path.join(os.path.dirname(__file__), "test_perimeter_registry.json"))
 
     now = time.time()
 
@@ -51,14 +53,21 @@ def test_phase5():
     assert rolled.status == "rolled_back", f"Expected status 'rolled_back', got {rolled.status}"
     print(f"✓ Rollback verified for Action {first_action_id}")
 
-    # Clean up test remediation file
-    if os.path.exists(os.path.join(os.path.dirname(__file__), "test_remediation.json")):
-        os.remove(os.path.join(os.path.dirname(__file__), "test_remediation.json"))
+    # Clean up test files
+    for name in ("test_remediation.json", "test_perimeter_registry.json"):
+        path = os.path.join(os.path.dirname(__file__), name)
+        if os.path.exists(path):
+            os.remove(path)
 
     print("✓ SOAR Auto-Remediation Execution verified")
     print("✓ Action Execution Logs & Context Enforcement verified")
     print("✓ Rollback Mechanism verified")
     print("✓ Phase 5 All Verification Tests Passed Successfully!\n")
+
+class Phase5Test(unittest.TestCase):
+    def test_phase5(self):
+        globals()["test_phase5"]()
+
 
 if __name__ == "__main__":
     test_phase5()

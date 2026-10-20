@@ -3,9 +3,13 @@ Log collector — reads recent macOS system log events using the `log` CLI.
 Falls back gracefully on non-macOS or permission errors.
 """
 
+import collections
 import json
+import os
 import platform
 import subprocess
+import threading
+import time
 import hashlib
 import re
 from typing import List, Dict
@@ -53,7 +57,7 @@ def _macos_logs(minutes: int) -> List[Dict]:
         "(eventMessage CONTAINS[c] 'blocked') OR "
         "(eventMessage CONTAINS[c] 'unauthorized') OR "
         "(eventMessage CONTAINS[c] 'error') OR "
-        "(process == 'sshd') OR "
+        "(process BEGINSWITH 'sshd') OR "
         "(process == 'sudo') OR "
         "(process == 'socketfilterfw') OR "
         "(process == 'configd')"
@@ -176,3 +180,100 @@ def _linux_logs() -> List[Dict]:
         except Exception:
             continue
     return []
+
+
+# ── Real-time authentication log stream ──────────────────────────────────────
+# `log show --last 3m` is slow (seconds). SSH brute-force detection instead tails the unified log live
+# (`log stream` on macOS, `tail -F` on Linux), so failed logins reach the detection engine within ~1s.
+
+_AUTH_STREAM_PREDICATE = (
+    '(process BEGINSWITH "sshd") OR (process == "sudo") OR (process == "su") OR (process == "screensharingd")'
+)
+_stream_buffer: "collections.deque[Dict]" = collections.deque(maxlen=2000)
+_stream_lock = threading.Lock()
+_stream_started = False
+
+
+def drain_auth_stream() -> List[Dict]:
+    """Returns (and clears) auth log entries captured live since the last call."""
+    with _stream_lock:
+        items = list(_stream_buffer)
+        _stream_buffer.clear()
+    return items
+
+
+def start_auth_log_stream() -> None:
+    global _stream_started
+    if _stream_started:
+        return
+    _stream_started = True
+    threading.Thread(target=_auth_stream_supervisor, daemon=True, name="auth-log-stream").start()
+
+
+def _push_stream_entry(proc: str, message: str, level: str, pid: int = 0, timestamp: str = "") -> None:
+    ts = timestamp or time.strftime("%Y-%m-%d %H:%M:%S")
+    entry = {
+        "id": f"stream-{ts}-{hashlib.md5(message.encode('utf-8', 'ignore')).hexdigest()[:8]}",
+        "timestamp": ts, "process": proc, "pid": pid, "subsystem": "", "message": message,
+        "category": "auth", "level": level, "source": "Live auth log stream",
+    }
+    with _stream_lock:
+        _stream_buffer.append(entry)
+
+
+def _auth_stream_supervisor() -> None:
+    while True:
+        try:
+            if platform.system() == "Darwin":
+                _macos_stream()
+            else:
+                _linux_tail()
+        except FileNotFoundError:
+            return  # tool not available on this host
+        except Exception as e:
+            print(f"[logs] auth stream error: {e}")
+        time.sleep(3)  # restart if the stream process exits
+
+
+def _macos_stream() -> None:
+    proc = subprocess.Popen(
+        ["/usr/bin/log", "stream", "--style", "ndjson", "--level", "info", "--predicate", _AUTH_STREAM_PREDICATE],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
+    )
+    print("[logs] Live auth log stream started (sshd / sudo / screensharingd).")
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msg = item.get("eventMessage", "")
+        if not msg:
+            continue
+        path = item.get("processImagePath", "")
+        name = path.split("/")[-1] if path else item.get("process", "unknown")
+        _push_stream_entry(name, msg, _classify_level(item.get("messageType", "Default"), msg),
+                           item.get("processID", 0), item.get("timestamp", ""))
+    proc.wait()
+
+
+def _linux_tail() -> None:
+    path = next((p for p in ("/var/log/auth.log", "/var/log/secure") if os.path.exists(p)), None)
+    if not path:
+        raise FileNotFoundError
+    rx = re.compile(r'^\S+\s+\S+\s+\S+\s+\S+\s+([^\[:\s]+)(?:\[(\d+)\])?:\s*(.*)$|^\S+\s+\S+\s+([^\[:\s]+)(?:\[(\d+)\])?:\s*(.*)$')
+    proc = subprocess.Popen(["tail", "-n", "0", "-F", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    print(f"[logs] Live auth log tail started ({path}).")
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        m = rx.match(line.strip())
+        if not m:
+            continue
+        name = m.group(1) or m.group(4) or "unknown"
+        pid = int(m.group(2) or m.group(5) or 0)
+        msg = m.group(3) or m.group(6) or ""
+        _push_stream_entry(name, msg, _classify_level("Default", msg), pid)
+    proc.wait()

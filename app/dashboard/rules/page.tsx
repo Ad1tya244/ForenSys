@@ -11,6 +11,8 @@ import { saveRule } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 export default function EDRRulesPage() {
+  // `ruleCatalog` (the 10 built-in behavioral rules) comes only from the live WS snapshot - it must never be
+  // fetched/overwritten here, or it flashes the unrelated, much shorter SOAR automation playbook list first.
   const { ruleCatalog = [], currentUser, updateRuleInCatalog, fetchRules } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,9 +28,6 @@ export default function EDRRulesPage() {
 
   useEffect(() => {
     setMounted(true);
-    if (fetchRules) {
-      fetchRules();
-    }
   }, []);
 
   const filteredRules = (ruleCatalog || []).filter((rule: any) => {

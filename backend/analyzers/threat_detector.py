@@ -81,7 +81,7 @@ class ThreatDetector:
 
         self._rule_connections(connections, now, alerts)
         self._rule_processes(processes, alerts)
-        self._rule_logs(logs, now, alerts)
+        # Auth-failure spikes are handled by pipeline/rules/auth_attack.py (avoids duplicate alerts)
         if listening_ports is not None:
             self._rule_new_listener(listening_ports, alerts)
 
@@ -138,26 +138,7 @@ class ThreatDetector:
                         assets=[process, rip_v4],
                     ))
 
-        # Rule 3 — Port scan (>15 unique remote ports from one IP)
-        for ip, ports in self._port_hits.items():
-            if len(ports) > 15:
-                ip_v4 = ensure_ipv4(ip)
-                aid = f"portscan-{ip_v4}"
-                if aid not in self._fired:
-                    self._fired.add(aid)
-                    out.append(self._make(
-                        aid="port_scan",
-                        severity="high",
-                        title=f"Port Scan Detected from {ip_v4}",
-                        desc=(
-                            f"IP {ip_v4} has connected to {len(ports)} unique ports "
-                            f"({', '.join(str(p) for p in sorted(ports)[:10])}...). "
-                            f"Indicative of automated port scanning."
-                        ),
-                        source="Network Monitor",
-                        assets=["localhost", ip_v4],
-                    ))
-
+        # (Port scan detection now lives in pipeline/rules/port_scan.py - avoids duplicate alerts)
 
     def _rule_processes(self, processes: List[Dict], out: List[Dict]) -> None:
         # Local Mac processes and background daemons must NOT raise alerts

@@ -15,10 +15,11 @@ import uuid
 from typing import Dict, List
 
 try:
-    from scapy.all import sniff  # type: ignore
+    from scapy.all import sniff, AsyncSniffer  # type: ignore
     from scapy.layers.inet import IP, TCP, UDP, ICMP  # type: ignore
 except ImportError:
     sniff = None  # type: ignore
+    AsyncSniffer = None  # type: ignore
     IP = TCP = UDP = ICMP = None  # type: ignore
 
 try:
@@ -61,38 +62,56 @@ def get_recent_traffic_packets() -> List[Dict]:
             packets.append(_packet_queue.popleft())
     return packets
 
+# "starting" | "live" (real BPF capture - real attacks are detected) | "simulated" (no privileges: ambient fake traffic only)
+capture_mode = "starting"
+
+
+def get_capture_mode() -> str:
+    return capture_mode
+
+
 def _sniffer_loop() -> None:
-    """Tries to set up a BPF-based packet sniffer using Scapy; falls back to simulator on permission errors or inactivity."""
-    if not callable(sniff):
+    """Runs one continuous Scapy/BPF capture; falls back to the ambient simulator when not privileged."""
+    global capture_mode
+    if not callable(sniff) or AsyncSniffer is None:
+        capture_mode = "simulated"
         print("[traffic] Scapy packet capture unavailable. Launching live packet simulator fallback...")
         _run_packet_simulator()
         return
 
     try:
         print("[traffic] Attempting to establish Scapy BPF-based packet sniffer...")
-        
-        # Test if we can initialize interface listening (usually triggers PermissionError if not root)
-        # We perform a micro-sniff of 0.1s to fail fast if we lack privileges.
+        # Micro-sniff to fail fast (PermissionError / no /dev/bpf handle) when we lack privileges.
         sniff(count=0, store=0, timeout=0.1)
-        print("[traffic] Scapy BPF-based packet sniffer initialized successfully.")
-        
+
         def scapy_callback(packet):
             try:
                 _process_scapy_packet(packet)
             except Exception:
                 pass
-                
-        # Sniff in a loop while the sniffer is active
+
         while _sniffer_running:
-            sniff(
-                prn=scapy_callback,
-                store=0,
-                stop_filter=lambda p: not _sniffer_running,
-                timeout=1.0  # sniff in 1-second iterations to check _sniffer_running state
-            )
-            
+            # A single long-lived capture (no per-second restarts, so no packets are missed between iterations).
+            sniffer = AsyncSniffer(prn=scapy_callback, store=False, filter="ip or ip6")
+            sniffer.start()
+            capture_mode = "live"
+            print("[traffic] LIVE packet capture running - real network attacks will be detected.")
+            while _sniffer_running and sniffer.running:
+                time.sleep(1.0)
+            try:
+                if sniffer.running:
+                    sniffer.stop()
+            except Exception:
+                pass
+            if _sniffer_running:
+                print("[traffic] Capture stopped unexpectedly (interface change?). Restarting in 2s...")
+                time.sleep(2.0)
+
     except Exception as e:
-        print(f"[traffic] Scapy packet capture failed or denied: {e}. Launching live packet simulator fallback...")
+        capture_mode = "simulated"
+        print(f"[traffic] Scapy packet capture failed or denied: {e}.")
+        print("[traffic] !! SIMULATED traffic only - real attacks (nmap/ping/hping) will NOT be detected. "
+              "Start the backend with `npm run dev:privileged` for live capture. !!")
         _run_packet_simulator()
 
 def _process_scapy_packet(packet) -> None:
@@ -136,7 +155,7 @@ def _process_scapy_packet(packet) -> None:
             flag_str = "+".join(flag_list) if flag_list else "ACK"
             
         info = f"[{flag_str}] Seq={tcp_layer.seq} Ack={tcp_layer.ack} Win={tcp_layer.window}"
-        _add_packet("TCP", src_ip, src_port, dst_ip, dst_port, length, info)
+        _add_packet("TCP", src_ip, src_port, dst_ip, dst_port, length, info, flags=flag_str)
         
     elif packet.haslayer(UDP):
         udp_layer = packet[UDP]
@@ -161,7 +180,7 @@ def _process_scapy_packet(packet) -> None:
                     qname = dns_layer.qd.qname
                     if isinstance(qname, bytes):
                         qname = qname.decode("utf-8", errors="ignore")
-                    info = f"DNS Query: {qname}"
+                    info = f"{'DNS Response' if getattr(dns_layer, 'qr', 0) else 'DNS Query'}: {qname}"
             except Exception:
                 pass
                 
@@ -178,19 +197,27 @@ def _process_scapy_packet(packet) -> None:
     elif "ICMP" in packet.summary():
         _add_packet("ICMP", src_ip, 0, dst_ip, 0, length, f"ICMP: {packet.summary()}")
 
-def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str, icmp_type: int | None = None) -> None:
-    """Thread-safe append of packet to global deque (drops telemetry from blocked IPs)."""
+def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str,
+                icmp_type: int | None = None, flags: str | None = None, ts: float | None = None) -> bool:
+    """Thread-safe append of a packet to the global deque.
+
+    Telemetry to/from IPs on the perimeter blocklist (and DNS for sinkholed domains) is ignored here - this is the
+    logical "block": nothing touches the OS firewall. Returns True when the packet was recorded.
+    """
     try:
         from pipeline.soar_engine import soar_engine
-        if src_ip in soar_engine.blocked_ips or dst_ip in soar_engine.blocked_ips:
-            # Ignore/drop packet telemetry from blocked IP
-            return
+        if soar_engine.is_blocked(src_ip) or soar_engine.is_blocked(dst_ip):
+            return False
+        if soar_engine.blocked_domains and soar_engine.is_domain_blocked(info):
+            return False
     except Exception:
         pass
 
+    now = ts if ts else time.time()
     packet_log = {
         "id": f"PKT-{uuid.uuid4().hex[:8].upper()}",
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+        "ts": now,
         "protocol": protocol,
         "src_ip": src_ip,
         "src_port": src_port,
@@ -201,8 +228,17 @@ def _add_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port
     }
     if icmp_type is not None:
         packet_log["icmp_type"] = icmp_type
+    if flags is not None:
+        packet_log["flags"] = flags
     with _queue_lock:
         _packet_queue.append(packet_log)
+    return True
+
+
+def inject_packet(protocol: str, src_ip: str, src_port: int, dst_ip: str, dst_port: int, length: int, info: str,
+                  icmp_type: int | None = None, flags: str | None = None) -> bool:
+    """Feeds a synthetic packet (Attack Lab) through the same blocklist-aware path as captured packets."""
+    return _add_packet(protocol, src_ip, src_port, dst_ip, dst_port, length, info, icmp_type=icmp_type, flags=flags)
 
 def _run_packet_simulator() -> None:
     """Generate high-fidelity simulated packet flows matching active connection targets."""

@@ -1,15 +1,37 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Zap, Shield, RotateCcw, CheckCircle, AlertTriangle, Filter, Search, Trash2 } from 'lucide-react';
+import { Zap, Shield, RotateCcw, CheckCircle, AlertTriangle, Filter, Search, Trash2, ShieldOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/lib/app-store';
 
+const ACTION_LABELS: Record<string, string> = {
+  block_ip: 'Perimeter Block (IP)',
+  add_pf_rule: 'Perimeter Block (IP)',
+  sinkhole_domain: 'DNS Sinkhole (Domain)',
+  quarantine_process: 'Process Contained (simulated)',
+  kill_process: 'Process Contained (simulated)',
+  capture_forensics: 'Forensic Evidence Sealed',
+  capture_pcap: 'PCAP Saved',
+  notify_analyst: 'Analyst Notified',
+};
+
 export default function AutoRemediationHistoryPage() {
-  const { remediationHistory, rollbackRemediationAction, clearHistoryAction } = useAppStore();
+  const { remediationHistory, blockedIps, rollbackRemediationAction, clearHistoryAction, resetLabAction } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -59,11 +81,45 @@ export default function AutoRemediationHistoryPage() {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-xs border-red-500/40 text-red-400 hover:bg-red-500/20 gap-1 font-sans ml-2"
+            title="Clears this audit log only. Active containment (blocked IPs/domains, quarantined processes) is left exactly as it is."
+            className="h-7 text-xs border-border/50 text-muted-foreground hover:bg-white/5 gap-1 font-sans ml-2"
             onClick={() => clearHistoryAction()}
           >
             <Trash2 className="w-3.5 h-3.5" /> Clear History
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                title="Clears history, alerts, incidents and evidence, and unblocks every contained IP/domain/process."
+                className="h-7 text-xs border-red-500/40 text-red-400 hover:bg-red-500/20 gap-1 font-sans"
+              >
+                <ShieldOff className="w-3.5 h-3.5" /> Reset Lab
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset the full lab state?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This clears all alerts, incidents, forensic evidence and the remediation history, and{' '}
+                  <span className="text-red-400 font-semibold">unblocks every currently contained IP, domain and process</span>
+                  {blockedIps.length > 0 && <> ({blockedIps.length} IP{blockedIps.length === 1 ? '' : 's'} currently blocked)</>}.
+                  Use this between demo runs, not for routine log cleanup &mdash; that's what{' '}
+                  <span className="text-foreground font-semibold">Clear History</span> is for.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => resetLabAction()}
+                >
+                  Reset Everything
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -131,20 +187,21 @@ export default function AutoRemediationHistoryPage() {
             </thead>
             <tbody className="divide-y divide-border/20 font-mono text-xs">
               {filteredLogs.map((log, idx) => {
-                const detectedTime = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const remediatedTime = new Date(new Date(log.timestamp).getTime() + 1200).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const attackerIp = log.target || log.src_ip || 'Remote IP';
+                const fmt = (t: string) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const detectedTime = fmt(log.resultDetails?.detected_at || log.timestamp);
+                const remediatedTime = fmt(log.timestamp);
+                const attackerIp = log.resultDetails?.attacker_ip || (['block_ip', 'add_pf_rule'].includes(log.actionType) ? log.target : log.src_ip) || log.target || 'Remote IP';
                 const affectedTarget = log.affectedTarget || log.affected_assets?.[0] || log.dst_ip || 'Local Host';
 
                 return (
                   <tr key={`${log.id}-${idx}`} className="hover:bg-white/5 transition-colors">
                     <td className="p-3 font-bold text-accent">{log.id}</td>
-                    <td className="p-3 text-foreground font-medium truncate max-w-xs">{log.ruleName || 'ICMP Flood Detection'}</td>
+                    <td className="p-3 text-foreground font-medium truncate max-w-xs" title={log.resultDetails?.message}>{log.ruleName || 'Detection'}</td>
                     <td className="p-3 text-red-400 font-semibold">{attackerIp}</td>
                     <td className="p-3 text-foreground font-semibold">{affectedTarget}</td>
                     <td className="p-3">
                       <Badge className="bg-cyan-950/50 text-cyan-300 border-cyan-800/40 text-[10px]">
-                        {log.actionType === 'block_ip' ? 'Perimeter Block (IP)' : log.actionType === 'add_pf_rule' ? 'PF Rule Block' : log.actionType}
+                        {ACTION_LABELS[log.actionType] || log.actionType}
                       </Badge>
                     </td>
                     <td className="p-3 text-muted-foreground">{detectedTime}</td>
@@ -157,7 +214,7 @@ export default function AutoRemediationHistoryPage() {
                             : 'bg-blue-950/40 text-blue-300 border-blue-800/50 text-[10px]'
                         }
                       >
-                        {log.status === 'success' ? 'CONTAINED' : 'EXECUTED'}
+                        {log.status === 'success' ? 'CONTAINED' : log.status === 'rolled_back' ? 'ROLLED BACK' : log.status === 'skipped' ? 'SKIPPED' : 'EXECUTED'}
                       </Badge>
                     </td>
                   </tr>

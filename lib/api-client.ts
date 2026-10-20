@@ -237,10 +237,11 @@ export interface SelfProtectionAuditEntry {
 export interface BlockedIPDetail {
   ip: string;
   blocked_at: string;
+  released_at?: string | null;
   reason: string;
   action_id: string;
   incident_id: string;
-  status: string;
+  status: 'active' | 'released' | string;
 }
 
 export interface BackendSnapshot {
@@ -628,7 +629,18 @@ export async function unblockIp(ip: string): Promise<any> {
 }
 
 export async function clearHistory(): Promise<any> {
+  // Clears the remediation AUDIT LOG only. Active containment (blocked IPs/domains, quarantined processes) is
+  // left untouched - use resetLab() to release that too.
   const res = await authFetch(`${BACKEND_URL}/api/remediation/clear-history`, {
+    method: 'POST',
+  });
+  return res.json();
+}
+
+export async function resetLab(): Promise<any> {
+  // Full reset for starting a fresh demo: clears alerts, incidents, evidence and the audit log, AND releases
+  // every active containment (unblocks every IP/domain, un-quarantines every process).
+  const res = await authFetch(`${BACKEND_URL}/api/remediation/reset-lab`, {
     method: 'POST',
   });
   return res.json();

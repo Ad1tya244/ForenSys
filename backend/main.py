@@ -182,11 +182,12 @@ def check_permissions(required_permission: str):
         return current_user
     return dependency
 
-from collectors.logs import get_recent_logs
+from collectors.logs import get_recent_logs, start_auth_log_stream, drain_auth_stream
 from collectors.network import get_connections, get_listening_ports, get_arp_devices
 from collectors.processes import get_processes
 from collectors.system import get_system_metrics
-from collectors.traffic import start_traffic_sniffer, get_recent_traffic_packets
+from collectors.traffic import start_traffic_sniffer, get_recent_traffic_packets, get_capture_mode
+from collectors import injector
 from analyzers.ip_intel import load_blocklist, get_geolocation, is_private_ip, blocklist_size
 from analyzers.threat_detector import ThreatDetector
 from config import get_config, update_config
@@ -197,6 +198,7 @@ from pipeline.correlation_engine import IncidentCorrelationEngine
 from pipeline.evidence import EvidenceManager
 from pipeline.soar_engine import soar_engine
 from pipeline.self_protection import asset_trust_manager
+from pipeline.response import ResponseOrchestrator
 
 detector = ThreatDetector()
 normalizer = EventNormalizer()
@@ -204,6 +206,12 @@ state_engine = BehaviorStateEngine()
 rule_engine = RuleEngine()
 correlation_engine = IncidentCorrelationEngine()
 evidence_manager = EvidenceManager()
+orchestrator = ResponseOrchestrator(soar_engine, evidence_manager, state_engine)
+
+# Incident ids must stay unique across restarts (history/evidence are persisted, correlation state is not)
+correlation_engine.seed_counters(
+    [log.incident_id for log in soar_engine.remediation_history] + [p.incident_id for p in evidence_manager.vault.values()]
+)
 
 _clients: List[WebSocket] = []
 _latest_snapshot: dict = {}
@@ -241,8 +249,8 @@ def sync_rules_with_config(rules: List[dict]) -> List[dict]:
                     r["threshold"] = cfg.get("dns_beacon_min_queries", 5)
                     r["time_window"] = f"{int(cfg.get('dns_beacon_window_sec', 60))}s"
                 elif "exfiltration" in name or r_id == "RULE-06":
-                    r["threshold"] = cfg.get("data_exfiltration_bytes", 52428800)
-                    r["time_window"] = f"{int(cfg.get('data_exfiltration_window_sec', 30))}s"
+                    r["threshold"] = cfg.get("data_exfiltration_bytes", 104857600)
+                    r["time_window"] = f"{int(cfg.get('data_exfiltration_window_sec', 20))}s"
     except Exception as e:
         print(f"Error syncing rules with config: {e}")
     return rules
@@ -268,169 +276,290 @@ def save_rules(rules: List[dict]) -> None:
         print(f"Error saving rules: {e}")
 
 
-# ── Background collection loop ────────────────────────────────────────────────
+# ── Background collection / detection loops ───────────────────────────────────
+#
+# Two loops keep detection fast and the UI smooth:
+#   slow_loop   (every 3s, blocking collectors run in a worker thread): sockets, processes, logs, listeners, metrics
+#   detect_loop (every 1s, cheap):  drain sniffed packets -> state engine -> rules -> incidents -> response workflow
+# Workflow per incident: detect -> incident -> auto-remediation (logical block) -> evidence sealed -> history.
 
-async def collect_loop() -> None:
-    global _latest_snapshot, _prev_net_io
+DETECT_INTERVAL_SEC = 1.0
+NET_INTERVAL_SEC = 1.0
+SLOW_INTERVAL_SEC = 3.0
+BROADCAST_EVERY_N_TICKS = 3
 
+_slow: dict = {"ready": False, "metrics": {}, "connections": [], "processes": [], "logs": [],
+               "listening": [], "devices": []}
+_geo_cache: dict = {}                    # remote ip -> geolocation (filled by the slow loop)
+_pending_traffic: List[dict] = []        # packets seen since the last broadcast
+_pending_new_alerts: List[dict] = []     # alerts raised since the last broadcast
+_live_auth_logs: List[dict] = []         # recent live auth log lines (shown in the log explorer)
+_seen_conn_ids: Set[str] = set()
+_seen_pids: Set[int] = set()
+_seen_log_keys: Set[str] = set()
+_net_baselined = False
+
+_UNKNOWN_GEO = {"country": "Unknown", "country_code": "XX", "city": "Unknown", "org": "Unknown", "lat": None, "lon": None}
+
+
+def _safe(fn, default, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except Exception as ex:   # one failing collector must never take the whole pipeline down
+        print(f"[collector] {getattr(fn, '__name__', 'collector')} failed: {ex}")
+        return default
+
+
+# ── Fast host telemetry (1s): sockets, listeners, processes ───────────────────
+
+def _collect_net() -> dict:
+    """Blocking socket/process collection (runs in a worker thread, never on the event loop)."""
+    return {
+        "connections": _safe(get_connections, []),
+        "listening": _safe(get_listening_ports, []),
+        "processes": _safe(get_processes, [], limit=None),
+    }
+
+
+def _ingest_net(data: dict) -> None:
+    """Only *new* sockets/processes become events; listeners are re-asserted every cycle (they are state, not events)."""
+    global _net_baselined
+    cfg = get_config()
+    connections, processes = data["connections"], data["processes"]
+
+    from analyzers.ip_intel import _LAN_GEO
+    for conn in connections:
+        rip = conn.get("remote_ip", "")
+        conn["geo"] = {} if not rip else (_LAN_GEO if is_private_ip(rip) else _geo_cache.get(rip, _UNKNOWN_GEO))
+
+    current_conn_ids = {c.get("id") for c in connections}
+    new_conns = [c for c in connections if c.get("id") not in _seen_conn_ids]
+    _seen_conn_ids.clear(); _seen_conn_ids.update(current_conn_ids)
+
+    current_pids = {p.get("pid") for p in processes}
+    new_procs = [] if not _net_baselined else [p for p in processes if p.get("pid") not in _seen_pids]
+    _seen_pids.clear(); _seen_pids.update(current_pids)
+    _net_baselined = True
+
+    events = normalizer.normalize_all(new_conns, new_procs, [], [], data["listening"])
+    state_engine.process_events(events, cfg)
+
+    # Legacy heuristic detector (suspicious ports, blocklist hits, offensive tools, new listeners)
+    try:
+        legacy_alerts = detector.analyze(connections, processes[:50], _slow["logs"], data["listening"])
+    except Exception as ex:
+        print(f"[net_loop] legacy detector error: {ex}")
+        legacy_alerts = []
+    if legacy_alerts:
+        _all_alerts.extend(legacy_alerts)
+        _pending_new_alerts.extend(legacy_alerts)
+
+    _slow.update({"connections": connections, "processes": processes[:50], "listening": data["listening"]})
+
+
+async def net_loop() -> None:
     while True:
         try:
-            # 1. Collect raw data
-            connections = get_connections()
-            metrics = get_system_metrics()
-            processes = get_processes()
-            logs = get_recent_logs(minutes=3)
-            listening = get_listening_ports()
-            devices = get_arp_devices()
-            traffic_packets = get_recent_traffic_packets()
-
-            # Normalize telemetry events & update state engine
-            cfg = get_config()
-            norm_events = normalizer.normalize_all(connections, processes, logs, traffic_packets, listening)
-            state_engine.process_events(norm_events, cfg)
-
-            # 2. Enrich public IPs with geolocation (cached, non-blocking enough)
-            public_ips = {
-                c["remote_ip"] for c in connections
-                if c.get("remote_ip") and not is_private_ip(c["remote_ip"])
-            }
-            geo_map: dict = {}
-            for ip in list(public_ips)[:20]:   # cap at 20 per cycle to avoid rate limiting
-                geo_map[ip] = get_geolocation(ip)
-
-            for conn in connections:
-                rip = conn.get("remote_ip", "")
-                if not rip:
-                    conn["geo"] = {}
-                elif is_private_ip(rip):
-                    from analyzers.ip_intel import _LAN_GEO
-                    conn["geo"] = _LAN_GEO
-                else:
-                    conn["geo"] = geo_map.get(rip, {"country": "Unknown", "country_code": "XX", "city": "Unknown", "org": "Unknown", "lat": None, "lon": None})
-
-            # 3. Run stateful modular rules & incident correlation
-            detection_alerts = rule_engine.evaluate_all(state_engine, cfg)
-            correlated_incidents = correlation_engine.correlate(detection_alerts)
-
-            # Generate evidence & trigger SOAR auto-remediation for incidents
-            for inc in correlated_incidents:
-                if inc.status in ("open", "investigating"):
-                    evidence_manager.generate_evidence(inc, state_engine)
-                    soar_engine.evaluate_and_remediate(inc, load_rules())
-
-            # Filter fresh detection alerts using unique alert_id tracking to prevent duplicate WS notifications
-            fresh_detection_alerts = []
-            for a in detection_alerts:
-                if a.alert_id not in _emitted_alert_ids:
-                    _emitted_alert_ids.add(a.alert_id)
-                    fresh_detection_alerts.append(a)
-
-            if len(_emitted_alert_ids) > 500:
-                _emitted_alert_ids.clear()
-
-            # Legacy threat detector (for backward compatibility)
-            legacy_alerts = detector.analyze(connections, processes, logs, listening)
-
-            all_new_alerts = [a.to_dict() for a in fresh_detection_alerts] + legacy_alerts
-            
-            # Check automation rules on new alerts
-            if all_new_alerts:
-                try:
-                    rules = load_rules()
-                    rules_changed = False
-                    for alert in all_new_alerts:
-                        for rule in rules:
-                            if not rule.get("enabled", True):
-                                continue
-                            
-                            # Matches by severity
-                            sev = rule.get("severity", "any")
-                            severity_match = (sev == "any") or (sev == alert.get("severity"))
-                            
-                            # Heuristic matching by trigger description & alert details
-                            rule_name_lower = rule.get("name", "").lower()
-                            trigger_lower = rule.get("trigger", "").lower()
-                            title_lower = alert.get("title", "").lower()
-                            desc_lower = alert.get("description", "").lower()
-                            
-                            trigger_match = False
-                            if rule_name_lower and (rule_name_lower in title_lower or rule_name_lower in desc_lower):
-                                trigger_match = True
-                            elif "icmp" in rule_name_lower and "icmp" in title_lower:
-                                trigger_match = True
-                            elif "ransomware" in trigger_lower and "ransomware" in title_lower:
-                                trigger_match = True
-                            elif "c2" in trigger_lower and ("c2" in title_lower or "c2" in desc_lower or "blocklist" in title_lower):
-                                trigger_match = True
-                            elif "severity == critical" in trigger_lower and alert.get("severity") == "critical":
-                                trigger_match = True
-                            elif "external ip" in trigger_lower and any(not is_private_ip(asset) for asset in alert.get("affectedAssets", [])):
-                                trigger_match = True
-                            
-                            if severity_match and trigger_match:
-                                rule["firedCount"] = rule.get("firedCount", 0) + 1
-                                rule["lastFired"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                                rules_changed = True
-                                print(f"[SOAR Rule Fired] Rule '{rule.get('name')}' triggered by alert '{alert.get('title')}'")
-                    if rules_changed:
-                        save_rules(rules)
-                except Exception as ex:
-                    print(f"Error executing SOAR automation rules: {ex}")
-
-            _all_alerts.extend(all_new_alerts)
-            # Keep last 200 alerts
-            if len(_all_alerts) > 200:
-                del _all_alerts[:-200]
-
-            # 4. Compute threat level from recent alert severities
-            recent = _all_alerts[-50:] if _all_alerts else []
-            threat_level = _compute_threat_level(recent)
-
-            # 5. Build snapshot
-            snapshot = {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "metrics": {
-                    **metrics,
-                    "threat_level": threat_level,
-                    "alerts_total": len(_all_alerts),
-                    "blocklist_size": blocklist_size(),
-                },
-                "connections": connections,
-                "processes": processes,
-                "logs": logs,
-                "new_alerts": all_new_alerts,
-                "all_alerts": _all_alerts[-100:],   # send last 100
-                "devices": devices,
-                "listening_ports": listening,
-                "network_traffic": traffic_packets,
-                "behavior_state": state_engine.get_summary(),
-                "incidents": [inc.to_dict() for inc in correlated_incidents],
-                "evidence_vault": evidence_manager.get_all_evidence(),
-                "remediation_history": soar_engine.get_history()[-50:],
-                "blocked_ips": soar_engine.get_blocked_ips(),
-                "blocked_ip_details": soar_engine.get_blocked_ip_details(),
-                "rule_catalog": rule_engine.get_rule_catalog(cfg),
-                "self_protection_audit": asset_trust_manager.audit_log[-50:],
-            }
-
-            _latest_snapshot = snapshot
-
-            # 6. Broadcast to all WebSocket clients
-            if _clients:
-                payload = json.dumps(snapshot, default=str)
-                dead = []
-                for ws in _clients:
-                    try:
-                        await ws.send_text(payload)
-                    except Exception:
-                        dead.append(ws)
-                for ws in dead:
-                    _clients.remove(ws)
-
+            _ingest_net(await asyncio.to_thread(_collect_net))
         except Exception as e:
-            print(f"[collect_loop] Error: {e}")
+            print(f"[net_loop] Error: {e}")
+        await asyncio.sleep(NET_INTERVAL_SEC)
 
-        await asyncio.sleep(3)
+
+# ── Slow host telemetry (3s): metrics, system logs, ARP devices, geolocation ──
+
+def _collect_slow() -> dict:
+    metrics = _safe(get_system_metrics, _slow["metrics"] or {})
+    logs = _safe(get_recent_logs, [], minutes=3)
+    devices = _safe(get_arp_devices, [])
+
+    # Geolocate public peers (lru-cached; capped per cycle to avoid rate limiting)
+    public_ips = {c["remote_ip"] for c in list(_slow["connections"]) if c.get("remote_ip") and not is_private_ip(c["remote_ip"])}
+    for ip in list(public_ips)[:20]:
+        if ip not in _geo_cache:
+            _geo_cache[ip] = _safe(get_geolocation, _UNKNOWN_GEO, ip)
+    return {"metrics": metrics, "logs": logs, "devices": devices}
+
+
+def _log_key(log: dict) -> str:
+    # Second-level timestamp so the same line from `log show` and the live stream is only counted once
+    return f"{str(log.get('timestamp'))[:19]}|{log.get('process')}|{log.get('message')}"
+
+
+def _ingest_slow(data: dict) -> None:
+    cfg = get_config()
+    logs = data["logs"]
+    new_logs = [l for l in logs if _log_key(l) not in _seen_log_keys]
+    _seen_log_keys.update(_log_key(l) for l in new_logs)
+    if len(_seen_log_keys) > 5000:
+        _seen_log_keys.clear(); _seen_log_keys.update(_log_key(l) for l in logs)
+    state_engine.process_events(normalizer.normalize_all([], [], new_logs, [], []), cfg)
+    _slow.update({"ready": True, "metrics": data["metrics"], "logs": logs, "devices": data["devices"]})
+
+
+async def slow_loop() -> None:
+    while True:
+        try:
+            _ingest_slow(await asyncio.to_thread(_collect_slow))
+        except Exception as e:
+            print(f"[slow_loop] Error: {e}")
+        await asyncio.sleep(SLOW_INTERVAL_SEC)
+
+
+def _fire_automation_rules(alerts: List[dict]) -> None:
+    """Bumps firedCount for matching SOAR automation rules (rules.json)."""
+    try:
+        rules = load_rules()
+        changed = False
+        for alert in alerts:
+            for rule in rules:
+                if not rule.get("enabled", True):
+                    continue
+                sev = rule.get("severity", "any")
+                severity_match = (sev == "any") or (sev == alert.get("severity"))
+                rule_name_lower = rule.get("name", "").lower()
+                trigger_lower = rule.get("trigger", "").lower()
+                title_lower = alert.get("title", "").lower()
+                desc_lower = alert.get("description", "").lower()
+
+                trigger_match = False
+                if rule_name_lower and (rule_name_lower in title_lower or rule_name_lower in desc_lower):
+                    trigger_match = True
+                elif "icmp" in rule_name_lower and "icmp" in title_lower:
+                    trigger_match = True
+                elif "ransomware" in trigger_lower and "ransomware" in title_lower:
+                    trigger_match = True
+                elif "c2" in trigger_lower and ("c2" in title_lower or "c2" in desc_lower or "blocklist" in title_lower):
+                    trigger_match = True
+                elif "severity == critical" in trigger_lower and alert.get("severity") == "critical":
+                    trigger_match = True
+                elif "external ip" in trigger_lower and any(not is_private_ip(asset) for asset in alert.get("affectedAssets", [])):
+                    trigger_match = True
+
+                if severity_match and trigger_match:
+                    rule["firedCount"] = rule.get("firedCount", 0) + 1
+                    rule["lastFired"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    changed = True
+                    print(f"[SOAR Rule Fired] Rule '{rule.get('name')}' triggered by alert '{alert.get('title')}'")
+        if changed:
+            save_rules(rules)
+    except Exception as ex:
+        print(f"Error executing SOAR automation rules: {ex}")
+
+
+def _detect_once() -> bool:
+    """One fast detection pass. Returns True when something noteworthy (new alert/response action) happened."""
+    cfg = get_config()
+    packets = get_recent_traffic_packets()
+    if packets:
+        _pending_traffic.extend(packets)
+        del _pending_traffic[:-1500]
+
+    # Live auth logs (and test-injected telemetry) join the normal pipeline here
+    injected = injector.drain()          # test hook; empty in normal operation
+    live_logs = drain_auth_stream() + injected["log"]   # sshd/sudo lines streamed live from the OS log
+    new_live = [l for l in live_logs if _log_key(l) not in _seen_log_keys]
+    _seen_log_keys.update(_log_key(l) for l in new_live)
+    if new_live:
+        _live_auth_logs.extend(new_live)
+        del _live_auth_logs[:-30]
+    events = [normalizer.normalize_packet(p) for p in packets]
+    events += normalizer.normalize_all(injected["connection"], injected["process"], new_live, [], injected["listener"])
+    state_engine.process_events(events, cfg)
+
+    # Detection -> correlation -> response workflow
+    detection_alerts = rule_engine.evaluate_all(state_engine, cfg)
+    fresh = [a for a in detection_alerts if a.alert_id not in _emitted_alert_ids]
+    for a in fresh:
+        _emitted_alert_ids.add(a.alert_id)
+    if len(_emitted_alert_ids) > 2000:
+        _emitted_alert_ids.clear()
+
+    incidents = correlation_engine.correlate(detection_alerts)
+    actions = []
+    if cfg.get("auto_remediation_enabled", True):
+        for inc in incidents:
+            if inc.status in ("open", "investigating"):
+                try:
+                    actions.extend(orchestrator.handle(inc))
+                except Exception as ex:
+                    print(f"[detect_loop] response workflow error for {inc.id}: {ex}")
+
+    fresh_dicts = [a.to_dict() for a in fresh]
+    if fresh_dicts:
+        _fire_automation_rules(fresh_dicts)
+        _all_alerts.extend(fresh_dicts)
+        _pending_new_alerts.extend(fresh_dicts)
+    if len(_all_alerts) > 200:
+        del _all_alerts[:-200]
+    return bool(fresh_dicts or actions)
+
+
+def _build_snapshot(new_alerts: List[dict], traffic: List[dict]) -> dict:
+    recent = _all_alerts[-50:] if _all_alerts else []
+    threat_level = _compute_threat_level(recent)
+    cfg = get_config()
+    logs = (_live_auth_logs[-10:][::-1] + _slow["logs"])[:120]
+    return {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "metrics": {
+            **_slow["metrics"],
+            "threat_level": threat_level,
+            "alerts_total": len(_all_alerts),
+            "blocklist_size": blocklist_size(),
+            "capture_mode": get_capture_mode(),
+        },
+        "connections": _slow["connections"],
+        "processes": _slow["processes"],
+        "logs": logs,
+        "new_alerts": new_alerts,
+        "all_alerts": _all_alerts[-100:],   # send last 100
+        "devices": _slow["devices"],
+        "listening_ports": _slow["listening"],
+        "network_traffic": traffic,
+        "behavior_state": state_engine.get_summary(),
+        "incidents": [inc.to_dict() for inc in correlation_engine.incidents],
+        "evidence_vault": evidence_manager.get_all_evidence(),
+        "remediation_history": soar_engine.get_history()[:100],   # history is stored newest-first
+        "blocked_ips": soar_engine.get_blocked_ips(),
+        "blocked_ip_details": soar_engine.get_blocked_ip_details(),
+        "blocked_domains": sorted(soar_engine.blocked_domains),
+        "rule_catalog": rule_engine.get_rule_catalog(cfg),
+        "self_protection_audit": asset_trust_manager.audit_log[-50:],
+    }
+
+
+async def _broadcast(snapshot: dict) -> None:
+    global _latest_snapshot
+    _latest_snapshot = snapshot
+    if not _clients:
+        return
+    payload = json.dumps(snapshot, default=str)
+    dead = []
+    for ws in list(_clients):
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in _clients:
+            _clients.remove(ws)
+
+
+async def detect_loop() -> None:
+    tick = 0
+    while True:
+        started = time.monotonic()
+        try:
+            noteworthy = _detect_once()
+            if _slow["ready"] and (noteworthy or tick % BROADCAST_EVERY_N_TICKS == 0):
+                new_alerts, traffic = list(_pending_new_alerts), list(_pending_traffic)
+                _pending_new_alerts.clear(); _pending_traffic.clear()
+                await _broadcast(_build_snapshot(new_alerts, traffic))
+        except Exception as e:
+            print(f"[detect_loop] Error: {e}")
+        tick += 1
+        await asyncio.sleep(max(0.05, DETECT_INTERVAL_SEC - (time.monotonic() - started)))
 
 
 def _compute_threat_level(alerts: List[dict]) -> str:
@@ -456,8 +585,11 @@ async def lifespan(app: FastAPI):
     # Start traffic sniffer in background daemon thread
     t_sniff = threading.Thread(target=start_traffic_sniffer, daemon=True)
     t_sniff.start()
-    # Start collection loop
-    asyncio.create_task(collect_loop())
+    # Start telemetry collection + detection loops
+    start_auth_log_stream()
+    asyncio.create_task(net_loop())
+    asyncio.create_task(slow_loop())
+    asyncio.create_task(detect_loop())
     print("[ForenSys] Backend started — collecting real data on port 8000")
     yield
 
@@ -531,6 +663,7 @@ def health():
         "clients": len(_clients),
         "alerts": len(_all_alerts),
         "blocklist_ips": blocklist_size(),
+        "capture_mode": get_capture_mode(),   # "live" = real packet capture; "simulated" = real attacks NOT visible
     }
 
 
@@ -540,17 +673,17 @@ def api_get_config():
 
 
 @app.post("/api/config")
-def api_update_config(patch: dict):
+def api_update_config(patch: dict, current_user: dict = Depends(check_permissions("manage_settings"))):
     return update_config(patch)
 
 
 @app.get("/api/incidents")
-def api_get_incidents():
+def api_get_incidents(current_user: dict = Depends(get_current_user)):
     return [inc.to_dict() for inc in correlation_engine.incidents]
 
 
 @app.get("/api/evidence")
-def api_get_evidence():
+def api_get_evidence(current_user: dict = Depends(get_current_user)):
     return evidence_manager.get_all_evidence()
 
 
@@ -565,7 +698,7 @@ def api_delete_evidence(id: str, current_user: dict = Depends(get_current_user))
 
 
 @app.post("/api/alerts/{id}/resolve")
-def api_resolve_alert(id: str):
+def api_resolve_alert(id: str, current_user: dict = Depends(check_permissions("manage_alerts"))):
     global _all_alerts
     for a in _all_alerts:
         if a.get("id") == id:
@@ -578,7 +711,7 @@ def api_resolve_alert(id: str):
 
 
 @app.post("/api/alerts/{id}/acknowledge")
-def api_acknowledge_alert(id: str):
+def api_acknowledge_alert(id: str, current_user: dict = Depends(check_permissions("manage_alerts"))):
     global _all_alerts
     for a in _all_alerts:
         if a.get("id") == id:
@@ -591,20 +724,21 @@ def api_acknowledge_alert(id: str):
 
 
 @app.get("/api/remediation")
-def api_get_remediation():
+def api_get_remediation(current_user: dict = Depends(get_current_user)):
     return {
         "history": soar_engine.get_history(),
-        "blocked_ips": soar_engine.get_blocked_ips()
+        "blocked_ips": soar_engine.get_blocked_ips(),
+        "blocked_domains": sorted(soar_engine.blocked_domains),
     }
 
 
 @app.get("/api/remediation/blocked-ips")
-def api_get_blocked_ips():
+def api_get_blocked_ips(current_user: dict = Depends(get_current_user)):
     return soar_engine.get_blocked_ip_details()
 
 
 @app.post("/api/remediation/block/{ip}")
-def api_block_ip(ip: str):
+def api_block_ip(ip: str, current_user: dict = Depends(check_permissions("manage_playbooks"))):
     log = soar_engine.block_ip(ip, reason="Manual Perimeter Block")
     return {
         "status": "success",
@@ -614,8 +748,10 @@ def api_block_ip(ip: str):
 
 
 @app.post("/api/remediation/unblock/{ip}")
-def api_unblock_ip(ip: str):
+def api_unblock_ip(ip: str, current_user: dict = Depends(check_permissions("manage_playbooks"))):
+    # A manual unblock re-arms detection: a renewed attack from this IP is a brand-new episode/incident
     _emitted_alert_ids.clear()
+    rule_engine.reset_episodes()
     log = soar_engine.unblock_ip(ip)
     return {
         "status": "success",
@@ -625,18 +761,34 @@ def api_unblock_ip(ip: str):
 
 
 @app.post("/api/remediation/clear-history")
-def api_clear_history():
+def api_clear_history(current_user: dict = Depends(check_permissions("manage_playbooks"))):
+    """Clears the remediation AUDIT LOG only. Active containment (blocked IPs/domains, quarantined processes)
+    is left exactly as it is - this must never silently let a blocked attacker's traffic back through.
+    To release containment too, use /api/remediation/reset-lab."""
+    soar_engine.clear_log()
+    return {"status": "success", "message": "Remediation history cleared. Active containment (blocked IPs/domains, quarantined processes) was left untouched."}
+
+
+@app.post("/api/remediation/reset-lab")
+def api_reset_lab(current_user: dict = Depends(check_permissions("manage_playbooks"))):
+    """Full reset for starting a fresh demo: clears alerts, incidents, evidence, the audit log, AND releases
+    every active containment (unblocks every IP/domain, un-quarantines every process)."""
     global _all_alerts
     _all_alerts.clear()
     _emitted_alert_ids.clear()
-    correlation_engine.incidents.clear()
-    soar_engine.clear_history()
+    _pending_new_alerts.clear()
+    correlation_engine.reset()
+    state_engine.clear()
+    rule_engine.reset_episodes()
+    soar_engine.reset_all()
     evidence_manager.clear_vault()
-    return {"status": "success", "message": "All stale history, alerts, incidents, and evidence items cleared."}
+    return {"status": "success", "message": "Lab reset: alerts, incidents, evidence, history and all active containment were cleared."}
 
 
 @app.post("/api/remediation/{action_id}/rollback")
-def api_rollback_remediation(action_id: str):
+def api_rollback_remediation(action_id: str, current_user: dict = Depends(check_permissions("manage_playbooks"))):
+    rule_engine.reset_episodes()
+    _emitted_alert_ids.clear()
     log = soar_engine.rollback_action(action_id)
     if not log:
         raise HTTPException(status_code=404, detail="Remediation action not found")
@@ -644,7 +796,7 @@ def api_rollback_remediation(action_id: str):
 
 
 @app.get("/api/behavior-analytics")
-def api_behavior_analytics():
+def api_behavior_analytics(current_user: dict = Depends(get_current_user)):
     return {
         "state_summary": state_engine.get_summary(),
         "incidents_count": len(correlation_engine.incidents),
@@ -655,7 +807,7 @@ def api_behavior_analytics():
 
 
 @app.get("/api/self-protection/audit")
-def api_self_protection_audit():
+def api_self_protection_audit(current_user: dict = Depends(get_current_user)):
     return asset_trust_manager.audit_log
 
 
@@ -1200,7 +1352,7 @@ def api_delete_rule(rule_id: str, current_user: dict = Depends(get_current_user)
 
 
 @app.post("/api/rules/{rule_id}/trigger")
-def api_trigger_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+def api_trigger_rule(rule_id: str, current_user: dict = Depends(check_permissions("manage_playbooks"))):
     rules = load_rules()
     for r in rules:
         if r["id"] == rule_id:

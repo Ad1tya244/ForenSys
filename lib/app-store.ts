@@ -44,6 +44,7 @@ import {
   blockIp as apiBlockIp,
   unblockIp as apiUnblockIp,
   clearHistory as apiClearHistory,
+  resetLab as apiResetLab,
   rollbackAction as apiRollbackAction,
   deleteEvidenceItem as apiDeleteEvidenceItem,
   resolveAlertApi,
@@ -154,6 +155,7 @@ interface AppState {
   blockIpAction: (ip: string) => Promise<void>;
   unblockIpAction: (ip: string) => Promise<void>;
   clearHistoryAction: () => Promise<void>;
+  resetLabAction: () => Promise<void>;
   deleteEvidenceItemAction: (id: string) => Promise<void>;
 
   acknowledgeAlert: (id: string) => void;
@@ -413,8 +415,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextEvidenceItems: EvidenceItem[] = (snapshot.evidence_vault || []).map((e: any) => ({
       id: e.id,
       incidentId: e.incidentId || 'INC-000000',
-      type: e.payload?.incident_title?.includes('ICMP') ? 'Network Capture' : (e.payload?.incident_title ? 'Security Artifact' : 'Telemetry Package'),
-      description: `${e.payload?.incident_title || 'Security Incident Evidence'} — ${e.payload?.packets?.length || 0} packets, ${e.payload?.logs?.length || 0} logs captured.`,
+      type: (e.payload?.packet_total ?? e.payload?.packets?.length ?? 0) > 0 || e.payload?.incident_title?.includes('ICMP') ? 'Network Capture' : (e.payload?.incident_title ? 'Security Artifact' : 'Telemetry Package'),
+      description: `${e.payload?.incident_title || 'Security Incident Evidence'} — ${e.payload?.packet_total ?? e.payload?.packets?.length ?? 0} packets, ${e.payload?.logs?.length || 0} logs captured.`,
       hash: e.hash ? e.hash.replace('SHA256: ', '') : 'SHA256: PENDING',
       collectedBy: 'ForenSys Automated Engine',
       collectedAt: e.timestamp ? new Date(e.timestamp) : new Date(),
@@ -539,8 +541,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearHistoryAction: async () => {
+    // Clears the remediation AUDIT LOG only - active containment (blocked IPs/domains, quarantined processes)
+    // is left exactly as it is. Use resetLabAction() to release that too.
     try {
       await apiClearHistory();
+      set({ remediationHistory: [] });
+    } catch (err) {
+      console.error('Error clearing history:', err);
+    }
+  },
+
+  resetLabAction: async () => {
+    try {
+      await apiResetLab();
       set({
         remediationHistory: [],
         blockedIps: [],
@@ -550,7 +563,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         alerts: [],
       });
     } catch (err) {
-      console.error('Error clearing history:', err);
+      console.error('Error resetting lab:', err);
     }
   },
 
@@ -915,9 +928,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fetchRules: async () => {
+    // Fetches the SOAR automation playbook list (`rules`) only. `ruleCatalog` (the EDR behavioral rule catalog
+    // shown on the EDR Rules page) is a completely different list, sourced only from the WS snapshot's
+    // `rule_catalog` field - overwriting it here used to cause the EDR Rules page to flash the 1-2 playbook
+    // rules before the next snapshot corrected it back to the real 10-rule catalog a couple seconds later.
     try {
       const rules = await fetchRules();
-      set({ rules, ruleCatalog: rules });
+      set({ rules });
     } catch (err) {
       console.error('Error fetching rules:', err);
     }

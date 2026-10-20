@@ -10,6 +10,72 @@ import { useAppStore, EvidenceItem } from '@/lib/app-store';
 import { toast } from 'sonner';
 import { AccessDenied } from '@/components/rbac/access-denied';
 
+const labelize = (k: string) => k.replace(/_/g, ' ');
+
+const AttackDetailValue = ({ value }: { value: any }) => {
+  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
+  if (Array.isArray(value)) {
+    if (value.length > 0 && typeof value[0] === 'object') {
+      return <span className="text-foreground">{JSON.stringify(value)}</span>;
+    }
+    return (
+      <div className="flex flex-wrap gap-1 max-h-24 overflow-auto">
+        {value.map((v, i) => (
+          <span key={i} className="px-1.5 py-0.5 rounded bg-accent/10 border border-accent/30 text-accent text-[10px]">{String(v)}</span>
+        ))}
+      </div>
+    );
+  }
+  if (typeof value === 'object') {
+    return <span className="text-foreground break-all">{Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>;
+  }
+  return <span className="text-foreground break-all">{String(value)}</span>;
+};
+
+const renderAttackDetails = (p: any) => {
+  const details = p.attack_details && Object.keys(p.attack_details).length > 0 ? p.attack_details : null;
+  const actions: any[] = p.remediation_actions || [];
+  const artifacts: any[] = p.artifacts || [];
+  if (!details && actions.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      {details && Object.entries(details).map(([kind, info]: [string, any]) => (
+        <div key={kind} className="p-3 bg-red-950/10 border border-red-900/30 rounded space-y-2 text-left">
+          <span className="text-[10px] text-red-300 uppercase tracking-wider font-semibold block">Attack Forensics — {labelize(kind)}</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono">
+            {Object.entries(info).filter(([k]) => k !== 'port_services').map(([k, v]) => (
+              <div key={k} className="p-2 bg-card/45 rounded border border-border/20">
+                <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">{labelize(k)}</span>
+                <AttackDetailValue value={v} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {actions.length > 0 && (
+        <div className="p-3 bg-card/30 border border-border/40 rounded space-y-1.5 text-left">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold block">Containment Taken (logical — no firewall/process changes)</span>
+          {actions.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px] font-mono">
+              <Badge variant="outline" className="text-[9px] py-0 px-1 border-cyan-700/50 text-cyan-300 shrink-0">{a.action}</Badge>
+              <span className="text-foreground shrink-0">{a.target}</span>
+              <span className="text-muted-foreground truncate">{a.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {artifacts.length > 0 && (
+        <div className="p-2.5 bg-card/45 rounded border border-border/20 font-mono text-[11px] text-left">
+          <span className="text-muted-foreground block text-[10px] uppercase mb-1">Saved Artifacts</span>
+          {artifacts.map((a, i) => (
+            <div key={i} className="text-foreground break-all">{a.path} · {a.packets} pkts · SHA-256 {String(a.sha256).slice(0, 16)}…</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const renderStructuredPayload = (item: EvidenceItem) => {
   if (!item.payload) {
     return <p className="text-xs text-muted-foreground italic">No detailed payload metadata captured for this evidence.</p>;
@@ -142,9 +208,11 @@ const renderStructuredPayload = (item: EvidenceItem) => {
             </div>
             <div className="p-2.5 bg-card/45 rounded border border-border/20">
               <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Captured Telemetry</span>
-              <span className="text-foreground text-xs">{displayPackets.length} packets, {logs.length} logs</span>
+              <span className="text-foreground text-xs">{p.packet_total ?? displayPackets.length} packets, {logs.length} logs</span>
             </div>
           </div>
+
+          {renderAttackDetails(p)}
 
           {displayPackets.length > 0 && (
             <div className="p-3 bg-card/30 border border-border/40 rounded space-y-2 text-left">
@@ -158,7 +226,7 @@ const renderStructuredPayload = (item: EvidenceItem) => {
                     <div key={idx} className="p-1.5 rounded bg-background/50 border border-border/20 flex items-center justify-between gap-2">
                       <span className="text-muted-foreground text-[10px] w-6 shrink-0">#{idx + 1}</span>
                       <Badge variant="outline" className="text-[9px] py-0 px-1 border-accent/40 text-accent shrink-0">{pkt.protocol || 'ICMP'}</Badge>
-                      <span className="text-foreground font-medium truncate flex-1">{pkt.src_ip || 'N/A'} &rarr; {pkt.dst_ip || 'N/A'}</span>
+                      <span className="text-foreground font-medium truncate flex-1">{pkt.src_ip || 'N/A'}{pkt.src_port ? `:${pkt.src_port}` : ''} &rarr; {pkt.dst_ip || 'N/A'}{pkt.dst_port ? `:${pkt.dst_port}` : ''}</span>
                       <span className="text-muted-foreground text-[10px] shrink-0 truncate max-w-55">{pkt.info || `${pkt.length || 64} bytes`}</span>
                     </div>
                   ))}

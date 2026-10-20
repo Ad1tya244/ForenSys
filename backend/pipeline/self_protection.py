@@ -191,7 +191,7 @@ class AssetTrustManager:
         Returns (is_trusted, cancel_reason).
         """
         # Hard Safeguard: Never kill current main backend PID or delete project root regardless of mode
-        if action_type == "kill_process":
+        if action_type in ("kill_process", "quarantine_process"):
             try:
                 target_pid = int(target)
                 if target_pid == os.getpid() or target_pid in self.registered_pids:
@@ -200,6 +200,10 @@ class AssetTrustManager:
                 pass
             if target.lower() in TRUSTED_PROCESS_NAMES or "main.py" in target.lower() or "uvicorn" in target.lower():
                 return True, f"Skipped due to trusted asset (Protected Process '{target}')."
+
+        if action_type == "sinkhole_domain":
+            if target.lower() in LOOPBACK_HOSTS or target.lower().endswith(".local") and "forensys" in target.lower():
+                return True, f"Skipped due to trusted asset (Protected ForenSys domain '{target}')."
 
         if action_type in ("block_ip", "add_pf_rule", "disable_interface"):
             if target in LOOPBACK_HOSTS or target.startswith("127.") or target in self.local_ips:
@@ -210,7 +214,7 @@ class AssetTrustManager:
                 return True, f"Skipped due to trusted asset (Protected Project Directory Path '{target}')."
 
         # General check for loopback / project paths if attack simulation mode is false
-        if not config.get("attack_simulation_mode", False):
+        if not config.get("attack_simulation_mode", False) and action_type not in ("capture_forensics", "capture_pcap", "notify_analyst"):
             if target in LOOPBACK_HOSTS or target.startswith("127."):
                 return True, f"Skipped due to trusted asset (Protected Loopback Target '{target}')."
 

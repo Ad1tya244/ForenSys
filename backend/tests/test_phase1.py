@@ -4,6 +4,7 @@ Tests Event Normalizer, Behavior State Engine, and Config Engine.
 """
 
 import sys
+import unittest
 import os
 import time
 
@@ -20,7 +21,7 @@ def test_phase1():
     # 1. Config Test
     cfg = get_config()
     assert "icmp_threshold" in cfg, "Config missing icmp_threshold"
-    assert cfg["icmp_threshold"] == 100, f"Expected icmp_threshold 100, got {cfg['icmp_threshold']}"
+    assert cfg["icmp_threshold"] == 50, f"Expected icmp_threshold 50, got {cfg['icmp_threshold']}"
     print("✓ Configuration Engine verified")
 
     # 2. Normalizer Test
@@ -68,6 +69,11 @@ def test_phase1():
 
     print("✓ Behavior State Engine verified over 5s, 10s, 30s, 1m, 5m windows")
     print("✓ Phase 1 All Verification Tests Passed Successfully!\n")
+
+class Phase1Test(unittest.TestCase):
+    def test_phase1(self):
+        globals()["test_phase1"]()
+
 
 if __name__ == "__main__":
     test_phase1()

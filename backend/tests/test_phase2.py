@@ -4,6 +4,7 @@ Tests Modular Rule Engine & All 10 Detection Rules.
 """
 
 import sys
+import unittest
 import os
 import time
 
@@ -56,6 +57,11 @@ def test_phase2():
     print("✓ Auto-Discovery verified")
     print("✓ Modular Detection Rules verified")
     print("✓ Phase 2 All Verification Tests Passed Successfully!\n")
+
+class Phase2Test(unittest.TestCase):
+    def test_phase2(self):
+        globals()["test_phase2"]()
+
 
 if __name__ == "__main__":
     test_phase2()

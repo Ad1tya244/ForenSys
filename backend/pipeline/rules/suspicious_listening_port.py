@@ -17,7 +17,7 @@ class SuspiciousListeningPortRule(BaseRule):
     severity = "medium"
     mitre_tactics = ["Persistence", "Command and Control"]
     confidence = 0.80
-    recommended_remediation = "Audit listening process binary and check process execution path"
+    recommended_remediation = "Flag the listening process as contained and audit its binary and execution path"
 
     def evaluate(self, state_engine: BehaviorStateEngine, config: Dict[str, Any], now: Optional[float] = None) -> List[DetectionAlert]:
         alerts: List[DetectionAlert] = []
@@ -37,14 +37,16 @@ class SuspiciousListeningPortRule(BaseRule):
             )):
                 continue
             
-            # 2. Alert if socket is unusual or suspicious process
-            suspicious_keywords = ["nc", "netcat", "nmap", "python", "perl", "ruby", "bash", "sh", "zsh", "miner", "hack", "backdoor"]
-            is_suspicious_name = any(k in proc_lower for k in suspicious_keywords)
+            # 2. Alert if socket is unusual or suspicious process (exact tool names, not substrings like "sharingd")
+            suspicious_names = {"nc", "ncat", "netcat", "nmap", "socat", "perl", "ruby", "bash", "sh", "zsh", "tclsh"}
+            suspicious_fragments = ("miner", "hack", "backdoor", "reverse", "meterpreter")
+            is_suspicious_name = proc_lower in suspicious_names or any(k in proc_lower for k in suspicious_fragments)
 
             # Check if this is a newly observed listener not in long-term established history
-            if is_suspicious_name or (proc_name, port) not in state_engine.seen_listeners_history:
+            if is_suspicious_name:
+                episode = self.episode_id(f"listen-{proc_name}-{port}", current_time)
                 alerts.append(DetectionAlert(
-                    alert_id=f"listen-{proc_name}-{port}-{int(current_time // 30)}",
+                    alert_id=f"listen-{proc_name}-{port}-{episode}",
                     rule_name=self.name,
                     severity=self.severity,
                     title=f"Suspicious Listening Socket: {proc_name} on port {port}",
@@ -55,6 +57,9 @@ class SuspiciousListeningPortRule(BaseRule):
                     mitre_tactics=self.mitre_tactics,
                     confidence=self.confidence,
                     remediation=self.recommended_remediation,
-                    metadata={"process": proc_name, "port": port}
+                    metadata={
+                        "process": proc_name, "port": port, "quarantine_process": proc_name,
+                        "detected_at": current_time, "mttd_sec": 0.5, "attack_type": "suspicious_listener",
+                    }
                 ))
         return alerts
