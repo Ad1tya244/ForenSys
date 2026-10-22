@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { useAppStore } from './app-store';
+import { buildSocContext } from './copilot-context';
 
 export interface Message {
   id: string;
@@ -66,7 +66,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     addMessage('user', text);
     setLoading(true);
 
-    const { alerts, incidents, metrics } = useAppStore.getState();
+    const context = buildSocContext();
 
     try {
       const response = await fetch('/api/chat', {
@@ -76,10 +76,8 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         },
         body: JSON.stringify({
           text,
-          history: messages,
-          alerts,
-          incidents,
-          metrics,
+          history: messages.map((m) => ({ role: m.role, content: m.content })),
+          context,
         }),
       });
 

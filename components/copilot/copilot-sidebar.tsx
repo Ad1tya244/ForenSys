@@ -10,12 +10,12 @@ import { ChevronRight, Send, RotateCcw, Bot, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SUGGESTED_QUESTIONS = [
+  'Summarize current status',
   'How many critical alerts right now?',
-  'Show me open incidents',
-  'What\'s the current threat level?',
-  'Summarize the attack chain',
-  'What are the top at-risk assets?',
-  'Avg response time this session',
+  'Show me the latest incidents',
+  'Which IPs are blocked?',
+  'What is our average MTTD and MTTR?',
+  'What should I do next?',
 ];
 
 function parseInlineMarkdown(text: string): React.ReactNode[] {

@@ -28,6 +28,16 @@ TRUSTED_PROCESS_PREFIXES = ("python",)
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# Stock macOS services that legitimately listen on the LAN. Trusted by process name AND port (None = any port),
+# so `cupsd` on 631 is quiet while `nc` on 631, or something named `cupsd` on 4444, still alerts.
+# Names are lowercase prefixes: `lsof` truncates command names to 9 characters ("ControlCe").
+TRUSTED_MACOS_LISTENERS = {
+    "cupsd": {631},                      # printing (CUPS)
+    "controlce": {5000, 7000},           # ControlCenter: AirPlay Receiver
+    "rapportd": None,                    # Continuity / Handoff (random ports)
+    "sharingd": None,                    # AirDrop / Sharing (random ports)
+}
+
 TRUSTED_CMD_KEYWORDS = {
     "main.py", "start-dev.js", "next", "uvicorn", "simulate_attacks.py", "ForenSys"
 }
@@ -130,6 +140,9 @@ class AssetTrustManager:
         if pid is not None and pid in self.registered_pids:
             return True, f"Trusted ForenSys Process PID ({pid})"
         name = (process_name or "").lower()
+        for prefix, ports in TRUSTED_MACOS_LISTENERS.items():
+            if name.startswith(prefix) and (ports is None or port in ports):
+                return True, f"macOS system service '{process_name}' listening on port {port}"
         known = name in TRUSTED_PROCESS_NAMES or name.startswith(TRUSTED_PROCESS_PREFIXES)
         if not known:
             return False, None

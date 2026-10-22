@@ -150,7 +150,7 @@ ForenSys is local-first, but three optional/ambient features contact third parti
 |---|---|---|
 | IP geolocation | `ipapi.co` | **Public** remote IP addresses seen in your connections (private/LAN addresses are never sent). Results are cached. |
 | Threat blocklist | `rules.emergingthreats.net` | A download of the public blocklist; nothing about you is sent. |
-| Iris AI copilot (only if `GEMINI_API_KEY` is set) | `generativelanguage.googleapis.com` (Google Gemini) | Your question plus the alert, incident and metrics context supplied by the browser. Without a key, a local rules-based fallback runs and nothing leaves the machine. |
+| Iris AI copilot (only if `GEMINI_API_KEY` is set) | `generativelanguage.googleapis.com` (Google Gemini) | Your question plus a compact snapshot built by the browser: host metrics, up to 20 alerts, 15 incidents, 20 remediation actions, the blocklist and evidence counts (alert descriptions truncated). No packet payloads or evidence contents are sent. Without a key, a local rules-based fallback runs and nothing leaves the machine. |
 
 ## 9. Responsible use
 

@@ -363,6 +363,22 @@ class WorkflowTests(unittest.TestCase):
         ]
         self.assertEqual(det.analyze([], [], [], listeners), [], "own dependencies must stay quiet")
 
+    def test_stock_macos_listeners_do_not_alert_but_lookalikes_do(self):
+        from analyzers.threat_detector import ThreatDetector
+        det = ThreatDetector()
+        det.analyze([], [], [], [{"port": 8000, "ip": "0.0.0.0", "process": "Python", "pid": 1}])  # baseline cycle
+        quiet = [
+            {"port": 631, "ip": "127.0.0.1", "process": "cupsd", "pid": 10},         # printing (screenshot: port 631)
+            {"port": 7000, "ip": "0.0.0.0", "process": "ControlCe", "pid": 11},      # lsof-truncated ControlCenter / AirPlay
+            {"port": 49152, "ip": "0.0.0.0", "process": "rapportd", "pid": 12},
+        ]
+        self.assertEqual(det.analyze([], [], [], quiet), [])
+        loud = [
+            {"port": 4444, "ip": "0.0.0.0", "process": "cupsd", "pid": 13},          # right name, wrong port
+            {"port": 7001, "ip": "0.0.0.0", "process": "mydaemon", "pid": 14},       # unknown process
+        ]
+        self.assertEqual(len(det.analyze([], [], [], loud)), 2)
+
     def test_attacker_tooling_listener_is_reported_once_by_the_pipeline_rule(self):
         from analyzers.threat_detector import ThreatDetector
         det = ThreatDetector()
