@@ -108,7 +108,7 @@ export default function EDRRulesPage() {
             <BookOpen className="w-6 h-6 text-accent" />
             EDR Rules Catalog
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Active behavioral threat detection rules, sliding windows, and response orchestrations
           </p>
         </div>

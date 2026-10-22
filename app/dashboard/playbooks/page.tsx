@@ -33,7 +33,7 @@ export default function FirewallRulesPage() {
             <Shield className="w-6 h-6 text-accent" />
             Firewall Rules & IP Blocklist
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Perimeter blocklist: the packet sniffer ignores listed IPs until you manually unblock them (no OS firewall changes)
           </p>
         </div>
@@ -98,7 +98,15 @@ export default function FirewallRulesPage() {
         </div>
 
         <ScrollArea className="h-90 w-full border border-border/30 rounded-lg">
-          <table className="w-full text-left border-collapse font-mono text-xs">
+          <table className="w-full min-w-[900px] table-fixed text-left border-collapse font-mono text-xs">
+            <colgroup>
+              <col className="w-[14%]" />
+              <col className="w-[11%]" />
+              <col className="w-[31%]" />
+              <col className="w-[14%]" />
+              <col className="w-[16%]" />
+              <col className="w-[14%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-border/50 bg-black/40 text-[11px] text-muted-foreground uppercase tracking-wider">
                 <th className="p-3">Blocked IP</th>
@@ -114,15 +122,15 @@ export default function FirewallRulesPage() {
                 const isBlocked = blockedIps.includes(item.ip) || item.status === 'active' || item.status === 'success';
                 return (
                   <tr key={`${item.ip}-${idx}`} className="hover:bg-white/5 transition-colors">
-                    <td className="p-3 font-bold text-accent">{item.ip}</td>
+                    <td className="p-3 font-bold text-accent truncate" title={item.ip}>{item.ip}</td>
                     <td className="p-3">
                       <Badge className={isBlocked ? 'bg-red-950/40 text-red-400 border-red-800/50 text-[10px]' : 'bg-emerald-950/40 text-emerald-400 border-emerald-800/50 text-[10px]'}>
                         {isBlocked ? 'BLOCKED' : 'UNBLOCKED'}
                       </Badge>
                     </td>
-                    <td className="p-3 text-foreground">{item.reason}</td>
-                    <td className="p-3 text-muted-foreground">{item.incident_id || 'N/A'}</td>
-                    <td className="p-3 text-muted-foreground">
+                    <td className="p-3 text-foreground break-words" title={item.reason}>{item.reason}</td>
+                    <td className="p-3 text-muted-foreground truncate" title={item.incident_id || 'N/A'}>{item.incident_id || 'N/A'}</td>
+                    <td className="p-3 text-muted-foreground break-words">
                       {!isBlocked && item.released_at ? (
                         <span title={`Blocked: ${item.blocked_at}`}>Unblocked: {item.released_at}</span>
                       ) : (

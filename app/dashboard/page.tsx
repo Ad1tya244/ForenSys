@@ -70,7 +70,7 @@ export default function Dashboard() {
   // Render a detailed placeholder if backend is not connected
   if (backendChecked && !backendConnected) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center cyber-grid">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
         <div className="glass rounded-xl border border-red-500/30 p-8 max-w-md w-full space-y-6 bg-card/40 backdrop-blur-md">
           <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/30 mx-auto animate-pulse">
             <ServerOff className="w-8 h-8 text-red-400" />
@@ -146,7 +146,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex-1 overflow-auto p-5 space-y-5 cyber-grid">
+    <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

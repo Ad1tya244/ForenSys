@@ -893,7 +893,7 @@ export default function ThreatHuntingPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex-1 overflow-auto p-5 space-y-5 bg-background cyber-grid relative">
+    <div className="flex-1 overflow-auto p-5 space-y-5 relative">
       <div className="absolute inset-0 bg-linear-to-b from-transparent via-cyan-950/5 to-transparent pointer-events-none" />
 
       {/* Header Panel */}
@@ -904,7 +904,7 @@ export default function ThreatHuntingPage() {
             <Target className="w-6 h-6 text-accent animate-pulse-slow" />
             Threat Hunting Workspace
           </h1>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Build multi-attribute filters, cross-reference IOC traces, and generate visual telemetry graphs.
           </p>
         </div>

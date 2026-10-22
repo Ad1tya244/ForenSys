@@ -51,6 +51,12 @@
     @apply bg-background text-foreground;
   }
 
+  /* Radix wraps ScrollArea content in a display:table div that stretches to the widest cell, so long text pushed
+     columns off-screen. Block layout keeps the content as wide as the viewport (tables scroll or truncate instead). */
+  [data-slot='scroll-area-viewport'] > div {
+    display: block !important;
+  }
+
   ::-webkit-scrollbar {
     width: 4px;
     height: 4px;

@@ -62,16 +62,16 @@ export default function AutoRemediationHistoryPage() {
     <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Zap className="w-6 h-6 text-accent" />
             Auto Remediation History
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Complete audit trail of automated EDR/SOAR containment actions and rollback statuses
           </p>
         </div>
-        <div className="flex items-center gap-2 font-mono text-xs">
+        <div className="flex shrink-0 items-center gap-2 font-mono text-xs">
           <Badge className="bg-green-950/60 text-green-300 border-green-700/50 px-3 py-1">
             {activeCount} Active Actions
           </Badge>
@@ -172,7 +172,17 @@ export default function AutoRemediationHistoryPage() {
       {/* History Table */}
       <div className="glass rounded-lg border border-border/50 overflow-hidden">
         <ScrollArea className="h-130 w-full">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[960px] table-fixed text-left border-collapse">
+            <colgroup>
+              <col className="w-[11%]" />
+              <col className="w-[17%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[18%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-border/50 bg-black/40 text-[11px] font-mono text-muted-foreground uppercase tracking-wider">
                 <th className="p-3">Action ID</th>
@@ -195,17 +205,17 @@ export default function AutoRemediationHistoryPage() {
 
                 return (
                   <tr key={`${log.id}-${idx}`} className="hover:bg-white/5 transition-colors">
-                    <td className="p-3 font-bold text-accent">{log.id}</td>
-                    <td className="p-3 text-foreground font-medium truncate max-w-xs" title={log.resultDetails?.message}>{log.ruleName || 'Detection'}</td>
-                    <td className="p-3 text-red-400 font-semibold">{attackerIp}</td>
-                    <td className="p-3 text-foreground font-semibold">{affectedTarget}</td>
+                    <td className="p-3 font-bold text-accent truncate" title={log.id}>{log.id}</td>
+                    <td className="p-3 text-foreground font-medium truncate" title={log.resultDetails?.message || log.ruleName}>{log.ruleName || 'Detection'}</td>
+                    <td className="p-3 text-red-400 font-semibold truncate" title={attackerIp}>{attackerIp}</td>
+                    <td className="p-3 text-foreground font-semibold truncate" title={affectedTarget}>{affectedTarget}</td>
                     <td className="p-3">
-                      <Badge className="bg-cyan-950/50 text-cyan-300 border-cyan-800/40 text-[10px]">
-                        {ACTION_LABELS[log.actionType] || log.actionType}
+                      <Badge className="max-w-full bg-cyan-950/50 text-cyan-300 border-cyan-800/40 text-[10px]" title={ACTION_LABELS[log.actionType] || log.actionType}>
+                        <span className="truncate">{ACTION_LABELS[log.actionType] || log.actionType}</span>
                       </Badge>
                     </td>
-                    <td className="p-3 text-muted-foreground">{detectedTime}</td>
-                    <td className="p-3 text-emerald-400">{remediatedTime}</td>
+                    <td className="p-3 text-muted-foreground whitespace-nowrap">{detectedTime}</td>
+                    <td className="p-3 text-emerald-400 whitespace-nowrap">{remediatedTime}</td>
                     <td className="p-3 text-right">
                       <Badge
                         className={

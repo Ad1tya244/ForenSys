@@ -176,7 +176,17 @@ export default function ReportsPage() {
         </div>
 
         <ScrollArea className="h-130 w-full">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[1040px] table-fixed text-left border-collapse text-xs">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
+              <col className="w-[7%]" />
+              <col className="w-[7%]" />
+              <col className="w-[10%]" />
+              <col className="w-[18%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-border/50 bg-black/40 text-[11px] font-mono text-muted-foreground uppercase tracking-wider">
                 <th className="p-3">Incident</th>
@@ -192,10 +202,10 @@ export default function ReportsPage() {
             <tbody className="divide-y divide-border/20">
               {filtered.map((r) => (
                 <tr key={r.id} className="hover:bg-white/5 transition-colors">
-                  <td className="p-3 max-w-md">
-                    <div className="font-mono font-bold text-accent">{r.id}</div>
+                  <td className="p-3">
+                    <div className="font-mono font-bold text-accent truncate" title={r.id}>{r.id}</div>
                     <div className="text-foreground truncate" title={r.title}>{r.title}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                    <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
                       {(r.attack_types || []).map((t) => ATTACK_LABELS[t] || t).join(', ') || 'n/a'}
                       {r.attacker_ips?.length ? ` · ${r.attacker_ips.join(', ')}` : ''}
                     </div>
@@ -217,7 +227,7 @@ export default function ReportsPage() {
                   <td className="p-3 text-right font-mono text-foreground">{r.contained ? formatDuration(r.mttr_sec) : 'n/a'}</td>
                   <td className="p-3">
                     {r.has_evidence
-                      ? <span className="text-emerald-400 font-mono text-[11px]">{r.evidence_id}</span>
+                      ? <span className="block truncate text-emerald-400 font-mono text-[11px]" title={r.evidence_id ?? undefined}>{r.evidence_id}</span>
                       : <span className="text-muted-foreground">none on file</span>}
                   </td>
                   <td className="p-3 text-right whitespace-nowrap">

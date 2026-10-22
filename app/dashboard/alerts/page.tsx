@@ -191,7 +191,7 @@ export default function AlertsPage() {
 
       {/* Alerts List */}
       <div className="glass rounded-lg border border-border/50 overflow-hidden">
-        <ScrollArea className="h-[calc(100vh-480px)] min-h-64">
+        <ScrollArea className="h-[calc(100vh-400px)] min-h-64">
           <div className="space-y-1.5 p-3">
             <AnimatePresence mode="popLayout">
               {filteredAlerts.map((alert, idx) => (

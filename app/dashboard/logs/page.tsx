@@ -244,7 +244,7 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto p-5 space-y-4 cyber-grid">
+    <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
