@@ -83,7 +83,7 @@ function renderMessageContent(content: string) {
 
 export function CopilotSidebar() {
   const { isOpen, messages, isLoading, toggleSidebar, clearMessages, sendMessage } = useCopilotStore();
-  const { alerts, incidents } = useAppStore();
+  const { alerts, correlatedIncidents } = useAppStore();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -230,7 +230,7 @@ export function CopilotSidebar() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-1.5 text-center">
-            Powered by live SOC data · {alerts.length} alerts · {incidents.length} incidents
+            Powered by live SOC data · {alerts.length} alert{alerts.length === 1 ? '' : 's'} · {correlatedIncidents.length} incident{correlatedIncidents.length === 1 ? '' : 's'}
           </p>
         </div>
       </motion.div>

@@ -68,12 +68,17 @@
       <sub><b>Host Log Diagnostics</b> - live OS log stream including the SSH authentication events used for detection.</sub>
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/iris.webp" alt="Iris context-aware AI assistant summarising live SOC status"><br>
+      <sub><b>Iris, the context-aware AI assistant</b> - answers from live alerts, incidents, MTTD/MTTR, blocklist and evidence, not canned text.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/architecture.webp" alt="Network Architecture topology map"><br>
+      <sub><b>Network Architecture</b> - interactive topology of the host, its sockets and the discovered LAN.</sub>
+    </td>
+  </tr>
 </table>
-
-<p align="center">
-  <img src="docs/screenshots/architecture.webp" alt="Network Architecture topology map" width="900"><br>
-  <sub><b>Network Architecture</b> - interactive topology of the host, its sockets and the discovered LAN.</sub>
-</p>
 
 ---
 
