@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#quick-start">Quick start</a> ·
@@ -29,6 +30,53 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.webp" alt="SOC Command Center showing a critical reverse-shell alert" width="900"><br>
+  <sub><b>SOC Command Center</b> - live host telemetry, alert velocity and the real-time threat stream (a reverse shell caught on a real two-laptop test).</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/auto-remediation.webp" alt="Auto Remediation History table"><br>
+      <sub><b>Auto Remediation History</b> - every containment action: perimeter block, evidence sealed, PCAP saved, analyst notified.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/forensics.webp" alt="Forensic Evidence Vault"><br>
+      <sub><b>Forensic Evidence Vault</b> - per-incident packages sealed with a SHA-256 hash and a chain of custody.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/analytics.webp" alt="Security Analytics with MTTD and MTTR"><br>
+      <sub><b>Security Analytics</b> - MTTD / MTTR (mean, median, p95) computed from real incident timestamps.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/reports.webp" alt="SOC summary PDF preview"><br>
+      <sub><b>Reports</b> - downloadable PDF incident reports and a date-range SOC summary.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/edr-rules.webp" alt="EDR Rules Catalog"><br>
+      <sub><b>EDR Rules Catalog</b> - 10 behavioral rules with MITRE mapping, confidence and live thresholds.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/host-logs.webp" alt="Host Log Diagnostics"><br>
+      <sub><b>Host Log Diagnostics</b> - live OS log stream including the SSH authentication events used for detection.</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/screenshots/architecture.webp" alt="Network Architecture topology map" width="900"><br>
+  <sub><b>Network Architecture</b> - interactive topology of the host, its sockets and the discovered LAN.</sub>
+</p>
+
+---
+
 ## Features
 
 | Area | What you get |
@@ -40,9 +88,9 @@
 | **Analytics** | MTTD and MTTR per incident from real timestamps (mean / median / p95), containment rate, trends, MITRE breakdown, per-attack-type response table. |
 | **Reports** | Full PDF per incident and a date-range SOC summary PDF, generated server-side with no extra dependency. |
 | **Live telemetry** | Real-time packet capture (Scapy/BPF), sockets with process mapping, geolocated peers, system logs, a live `sshd`/`sudo` log tail and ARP devices. |
-| **Self-protection** | ForenSys never alerts on or contains itself or its own dependencies (`mysqld`, the Python backend, the Next.js dev server). |
+| **Self-protection** | ForenSys never alerts on or contains itself, its dependencies (`mysqld`, the Python backend, the Next.js dev server) or stock macOS services (`cupsd`, AirPlay, `rapportd`, `sharingd`), always matched by process *and* port. |
 | **Access control** | JWT sessions (bcrypt passwords), four roles / twelve permissions, authenticated WebSocket, restricted CORS. |
-| **Iris copilot** | Optional AI assistant (Gemini) with a local rules-based fallback. |
+| **Iris copilot** | Sidebar assistant grounded in live data (alerts, incidents, MTTD/MTTR, blocklist, remediation, evidence). Uses Gemini when `GEMINI_API_KEY` is set, otherwise answers locally from the same data; it never invents hosts, IPs or numbers. |
 
 ---
 
@@ -167,8 +215,8 @@ Editable on disk or live from the **EDR Rules** page (editing is offered to admi
 | **ICMP Flood** | ≥ 50 echo requests from one remote IP in 10 s | Block source IP |
 | **Port Scan** | ≥ 20 distinct ports probed (bare TCP SYN) in 15 s | Block source IP |
 | **SYN Flood** | ≥ 50 SYNs in 10 s concentrated on ≤ 5 ports | Block source IP |
-| **Brute Force Authentication** | ≥ 3 failed logins then a success from one source in 60 s | Block source IP |
-| **Authentication Attack** | ≥ 3 failed logins per remote IP in 60 s, or ≥ 15 new connections to SSH/FTP/Telnet/SMB/RDP/VNC | Block source IP |
+| **Brute Force Authentication** | ≥ 3 failed logins then a success from one source in 60 s (unit-tested; not triggerable live, see the demo runbook) | Block source IP |
+| **Authentication Attack** | ≥ 3 failed logins (separate connections) per remote IP in 60 s, or ≥ 15 new connections to SSH/FTP/Telnet/SMB/RDP/VNC | Block source IP |
 | **DNS Beaconing** | ≥ 5 regular lookups of one domain (low variance) in 60 s | Sinkhole domain |
 | **Reverse Shell** | A shell/interpreter opens an outbound connection to an uncommon external port | Block C2 IP + flag process |
 | **Data Exfiltration** | ≥ 100 MB uploaded to one external peer in 20 s and ≥ 75 % of its traffic is outbound (downloads never count) | Block destination IP |
@@ -222,7 +270,7 @@ A port scan and a SYN flood are mutually exclusive by design, so a single `nmap 
 
 ## Real attack demos
 
-ForenSys is demonstrated with **real traffic from a second machine you own**, not an in-app simulator. Start with `npm run dev:privileged`, then follow [docs/REAL_ATTACK_DEMOS.md](docs/REAL_ATTACK_DEMOS.md): nmap port scan, ICMP/SYN flood, SSH brute force, DNS beaconing, reverse shell, exfiltration, rogue listener and suspicious process chain. Afterwards open **Reports** for the PDF and **Analytics** for MTTD/MTTR.
+ForenSys is demonstrated with **real traffic from a second machine you own**, not an in-app simulator. Start with `npm run dev:privileged`, then follow [docs/REAL_ATTACK_DEMOS.md](docs/REAL_ATTACK_DEMOS.md): nmap port scan, ICMP/SYN flood, SSH failed logins, DNS beaconing, reverse shell and rogue listener (all verified live), plus exfiltration and the process chain (unit-tested; see the status table in the runbook). Afterwards open **Reports** for the PDF and **Analytics** for MTTD/MTTR.
 
 > Only test against systems and networks you own or are explicitly authorised to test.
 
@@ -260,9 +308,10 @@ Covers the full detect → contain → evidence → history workflow for every r
 ```text
 ├── app/                       Next.js App Router (dashboard pages, login, /api/chat)
 ├── components/                UI components (shadcn/ui, RBAC guards, Iris sidebar)
-├── lib/                       api-client.ts (REST/WebSocket), app-store.ts (Zustand), format.ts
+├── lib/                       api-client.ts (REST/WebSocket), app-store.ts (Zustand), copilot-store.ts + copilot-context.ts (Iris), format.ts
 ├── scripts/start-dev.js       Launcher: backend first, then Next.js (sudo for the backend only with --privileged)
 ├── docs/REAL_ATTACK_DEMOS.md  Two-machine attack runbook
+├── docs/screenshots/          Images used in this README
 ├── backend/
 │   ├── main.py                FastAPI app, auth/RBAC, loops, REST + WebSocket
 │   ├── collectors/            traffic (Scapy), network, processes, system, logs (+ live auth tail)
@@ -298,6 +347,7 @@ Covers the full detect → contain → evidence → history workflow for every r
 - Containment is logical (blocklist/sinkhole/flag) by design and does not stop traffic at the OS level.
 - Detection is heuristic and threshold-based; thresholds suit a lab or workstation and should be tuned.
 - Live auth-log detection and `lsof` fallbacks are macOS-first; Linux support is partial.
+- Iris answers only from the snapshot the browser sends (latest 20 alerts, 15 incidents, 20 remediation actions); with a Gemini key that snapshot leaves the machine (see [SECURITY.md](SECURITY.md)). `/api/chat` does not yet verify the session.
 - PDF reports use built-in fonts (Latin-1 text); other scripts are replaced with `?`.
 - See [SECURITY.md](SECURITY.md) for security-related limitations.
 

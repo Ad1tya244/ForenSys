@@ -35,6 +35,14 @@
 - **Tests must not touch real runtime data** (`remediation_history.json`, `perimeter_registry.json`, `evidence_vault.json`,
   `incident_ledger.json`, `backend/.env`, `rules.json`, `config.json`). Point engines at temp paths (see `Pipeline` in
   `backend/tests/test_workflow.py`) and don't start the app lifespan (it backfills the ledger).
+- **One event, one alert.** A single attacker action must raise a single alert. Detection lives in `backend/pipeline/rules/`;
+  `analyzers/threat_detector.py` is legacy and must defer to a pipeline rule whenever one already covers the event
+  (e.g. `nc` listeners, auth failures). Auth failures without a remote IP never alert. Add a regression test with each rule change.
+- **Iris (`app/api/chat/route.ts`) answers only from real data.** Context comes from `lib/copilot-context.ts` (live store
+  data); the local fallback and the Gemini prompt must never contain invented hosts, IPs, hashes or attack chains, and must
+  describe containment as a logical perimeter blocklist.
+- **Tables:** use fixed column widths with `truncate`/`break-words` inside `ScrollArea`; the shared scroll area keeps content
+  at viewport width (`globals.css`), so don't rely on a table growing the page. Page roots use `p-5 space-y-5` and the standard header.
 - **Next.js:** keep `experimental.turbopackFileSystemCacheForDev: false` in `next.config.mjs` (the dev cache corrupts inside
   cloud-synced folders); `page.tsx` files may only export the default component; don't run `next build` in the repo while a
   dev server is running (they share `.next`).

