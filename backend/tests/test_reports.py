@@ -133,16 +133,16 @@ class DetectionTimingTests(unittest.TestCase):
         self.assertAlmostEqual(self.p.corr.incidents[0].mttd_sec, 6.0, delta=0.4)
 
     def test_uncontained_incident_has_no_mttr(self):
-        # Alert-only detection (nothing to block) => status investigating, MTTR unknown rather than 0.
-        now = time.time()
-        for i in range(4):
-            injector.push("log", {"id": f"l{i}", "process": "sudo", "level": "error", "pid": 1, "message": "authentication failure"})
-        self.p.step()
-        incs = [i for i in self.p.corr.incidents if not i.block_ips]
-        self.assertTrue(incs, "expected a local auth-surge incident")
-        rec = self.p.ledger.get(incs[0].id)
+        # Containment can be refused (e.g. self-protection). The incident then has no MTTR - unknown, not zero.
+        from pipeline.self_protection import asset_trust_manager
+        for port in range(100, 140):
+            traffic._add_packet("TCP", "45.155.205.59", 50000, HOST, port, 44, "[SYN]", flags="SYN")
+        with mock.patch.object(asset_trust_manager, "is_trusted_remediation_target", return_value=(True, "trusted asset")):
+            self.p.step()
+        rec = self.p.ledger.get(self.p.corr.incidents[0].id)
         self.assertFalse(rec["contained"])
         self.assertIsNone(rec["mttr_sec"])
+        self.assertIsNotNone(rec["mttd_sec"])
 
 
 class AuthEvidenceTests(unittest.TestCase):

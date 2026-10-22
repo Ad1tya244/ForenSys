@@ -213,6 +213,39 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(d["failed_attempts"], 5)
         self.assertTrue(d["compromised"])
 
+    def test_auth_failures_without_an_attacker_address_raise_no_alert(self):
+        # sudo/loginwindow typos, replayed history, ... have no remote IP: nothing to name or contain, so no alert.
+        for i in range(12):
+            injector.push("log", {"id": f"n{i}", "process": "sudo" if i % 2 else "loginwindow", "level": "error", "pid": 9,
+                                  "message": "authentication failure; user not allowed"})
+        fresh, _ = self.p.step()
+        self.assertEqual(fresh, [])
+        self.assertEqual(self.p.corr.incidents, [])
+
+    def test_ssh_attack_raises_exactly_one_alert_even_with_background_auth_noise(self):
+        atk = "45.155.205.82"
+        for i in range(9):   # unrelated noise with no address
+            injector.push("log", {"id": f"n{i}", "process": "sudo", "level": "error", "pid": 9, "message": "authentication failure"})
+        for i in range(4):   # a real attack: each connection writes several lines that share one client port
+            port = 51000 + i
+            injector.push("log", {"id": f"a{i}", "process": "sshd-session", "level": "info", "pid": 1,
+                                  "message": f"Invalid user admin from {atk} port {port}"})
+            injector.push("log", {"id": f"b{i}", "process": "sshd-session", "level": "error", "pid": 1,
+                                  "message": f"error: PAM: authentication error for illegal user admin from {atk} port {port}"})
+        fresh, _ = self.p.step()
+        self.assertEqual(len(fresh), 1, [a.title for a in fresh])
+        self.assertEqual(fresh[0].rule_name, "Authentication Attack Correlation")
+        self.assertIn(atk, fresh[0].title)
+        self.assertEqual(len(self.p.corr.incidents), 1)
+        self.assertIn(atk, self.p.soar.blocked_ips)
+
+    def test_local_auth_noise_cannot_trigger_brute_force_success_alert(self):
+        for i in range(4):
+            injector.push("log", {"id": f"f{i}", "process": "sudo", "level": "error", "pid": 9, "message": "authentication failure"})
+        injector.push("log", {"id": "ok", "process": "sudo", "level": "info", "pid": 9, "message": "session opened for user root"})
+        fresh, _ = self.p.step()
+        self.assertEqual(fresh, [])
+
     # ── DNS beaconing ─────────────────────────────────────────────────────────
 
     def test_dns_beaconing_sinkholes_domain(self):
@@ -330,13 +363,20 @@ class WorkflowTests(unittest.TestCase):
         ]
         self.assertEqual(det.analyze([], [], [], listeners), [], "own dependencies must stay quiet")
 
+    def test_attacker_tooling_listener_is_reported_once_by_the_pipeline_rule(self):
+        from analyzers.threat_detector import ThreatDetector
+        det = ThreatDetector()
+        det.analyze([], [], [], [{"port": 8000, "ip": "0.0.0.0", "process": "Python", "pid": 1}])  # baseline cycle
+        self.assertEqual(det.analyze([], [], [], [{"port": 4444, "ip": "0.0.0.0", "process": "nc", "pid": 5}]), [],
+                         "the legacy analyzer must not duplicate the pipeline's Suspicious Listening Port alert")
+
     def test_untrusted_or_misplaced_listeners_still_alert(self):
         from analyzers.threat_detector import ThreatDetector
         det = ThreatDetector()
         det.analyze([], [], [], [{"port": 8000, "ip": "0.0.0.0", "process": "Python", "pid": 1}])  # baseline cycle
 
         listeners = [
-            {"port": 33060, "ip": "0.0.0.0", "process": "nc", "pid": 5001},          # right port, wrong process
+            {"port": 33060, "ip": "0.0.0.0", "process": "mydaemon", "pid": 5001},    # right port, wrong process
             {"port": 4444, "ip": "0.0.0.0", "process": "mysqld", "pid": 5002},       # right name, unexpected exposed port
         ]
         titles = [a["title"] for a in det.analyze([], [], [], listeners)]

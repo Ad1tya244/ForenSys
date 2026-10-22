@@ -34,6 +34,8 @@ class BruteForceAuthRule(BaseRule):
                 continue
             key_v4 = ensure_ipv4(str(key))
             is_ip = bool(key) and (key[0].isdigit() or ":" in key) and not is_local_ip(key)
+            if not is_ip:
+                continue   # no attacker address (e.g. a local sudo typo) => not a detection we can name or contain
             fail_events = snapshot.auth_fail_events.get(key, [])
             first_seen = min((e.timestamp for e in fail_events), default=current_time)
             episode = self.episode_id(f"brute-{key_v4}", current_time)

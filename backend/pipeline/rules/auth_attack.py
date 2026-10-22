@@ -33,12 +33,13 @@ class AuthAttackRule(BaseRule):
         from pipeline.self_protection import get_primary_host_ip
         host_ip = get_primary_host_ip()
 
-        unattributed = 0
         for key, fails in snapshot.auth_failures_by_src.items():
             key = str(key)
+            # Only failures tied to a REMOTE source address are an attack we can name and contain. Failures with no
+            # attacker address (sudo/loginwindow typos, historical log lines, ...) are deliberately ignored here:
+            # a nameless "host surge" alert duplicated the real detection and was a false-positive source.
             is_remote_ip = bool(key) and (key[0].isdigit() or ":" in key) and not is_local_ip(key)
             if not is_remote_ip:
-                unattributed += fails
                 continue
             if fails < limit:
                 continue
@@ -104,23 +105,5 @@ class AuthAttackRule(BaseRule):
                         "detected_at": current_time, "attack_type": "auth_attack",
                     }
                 ))
-
-        # Failures that cannot be tied to a remote address: alert only (nothing to block)
-        if unattributed >= limit:
-            episode = self.episode_id("auth-local", current_time)
-            alerts.append(DetectionAlert(
-                alert_id=f"auth-attack-local-{episode}",
-                rule_name=self.name,
-                severity="medium",
-                title=f"Host Authentication Attack Surge ({unattributed} failures)",
-                description=f"Correlated {unattributed} failed authentication attempts across system authentication services within {window_sec:g}s.",
-                datasource=self.datasource,
-                timestamp=current_time,
-                affected_assets=["PAM/Auth", host_ip],
-                mitre_tactics=self.mitre_tactics,
-                confidence=self.confidence,
-                remediation="Enforce temporary login lockout and inspect host authentication log streams",
-                metadata={"total_failures": unattributed, "detected_at": current_time, "attack_type": "auth_attack", "process": "auth_service"}
-            ))
 
         return alerts

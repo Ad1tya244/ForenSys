@@ -218,6 +218,11 @@ class ThreatDetector:
                     o.get("process", ""), port, o.get("ip", ""), o.get("pid"))[0] for o in owners):
                 continue
             proc = owners[0]["process"] if owners else "unknown"
+            # Known attacker tooling (nc, socat, ...) is reported by the pipeline's Suspicious Listening Port rule;
+            # raising it here too would show the same event as two alerts.
+            from pipeline.rules.suspicious_listening_port import is_suspicious_listener_name
+            if owners and all(is_suspicious_listener_name(o.get("process", "")) for o in owners):
+                continue
             aid = f"new-listener-{port}"
             if aid not in self._fired:
                 self._fired.add(aid)

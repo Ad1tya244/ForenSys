@@ -9,6 +9,16 @@ from typing import Dict, Any, List, Optional
 from pipeline.rules.base import BaseRule, DetectionAlert
 from pipeline.state_engine import BehaviorStateEngine
 
+# Exact tool names / fragments that are suspicious on their own. The legacy analyzer defers to this rule for them.
+SUSPICIOUS_LISTENER_NAMES = {"nc", "ncat", "netcat", "nmap", "socat", "perl", "ruby", "bash", "sh", "zsh", "tclsh"}
+SUSPICIOUS_LISTENER_FRAGMENTS = ("miner", "hack", "backdoor", "reverse", "meterpreter")
+
+
+def is_suspicious_listener_name(proc_name: str) -> bool:
+    p = (proc_name or "").lower()
+    return p in SUSPICIOUS_LISTENER_NAMES or any(k in p for k in SUSPICIOUS_LISTENER_FRAGMENTS)
+
+
 class SuspiciousListeningPortRule(BaseRule):
     name = "Suspicious Listening Port"
     description = "Detects new listening sockets opened by non-whitelisted or suspicious processes."
@@ -42,9 +52,7 @@ class SuspiciousListeningPortRule(BaseRule):
                 continue
             
             # 2. Alert if socket is unusual or suspicious process (exact tool names, not substrings like "sharingd")
-            suspicious_names = {"nc", "ncat", "netcat", "nmap", "socat", "perl", "ruby", "bash", "sh", "zsh", "tclsh"}
-            suspicious_fragments = ("miner", "hack", "backdoor", "reverse", "meterpreter")
-            is_suspicious_name = proc_lower in suspicious_names or any(k in proc_lower for k in suspicious_fragments)
+            is_suspicious_name = is_suspicious_listener_name(proc_name)
 
             # Check if this is a newly observed listener not in long-term established history
             if is_suspicious_name:
