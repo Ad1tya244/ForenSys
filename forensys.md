@@ -1,4 +1,4 @@
-# ForenSys - Enterprise SOC Platform
+# ForenSys - Forensic-Safe Endpoint Detection & Automated SOC Response Platform
 
 > [!IMPORTANT]
 > **Status Notice:** ForenSys is an active security engineering project and is currently **still under progress**. New modules, automation rules, and agent connectors are being actively developed.
@@ -6,7 +6,7 @@
 ---
 
 ## Project Name
-**ForenSys** (formatted stylistically as **FOREN** in white and **SYS** in cyan accents) — Enterprise Security Operations Center (SOC) Platform.
+**ForenSys** (formatted stylistically as **FOREN** in white and **SYS** in cyan accents) — Forensic-Safe Endpoint Detection & Automated SOC Response Platform.
 
 ---
 

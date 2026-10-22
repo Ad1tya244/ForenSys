@@ -1,5 +1,5 @@
 """
-ForenSys EDR/XDR Attack Simulation & Pipeline Verification Script
+ForenSys Attack Simulation & Pipeline Verification Script
 Simulates 6 threat vectors (ICMP Flood, Port Scan, DNS Beacon, Reverse Shell, Auth Attack, Data Exfiltration)
 and verifies the full pipeline end-to-end:
 Detection -> Correlation -> Incident -> Evidence -> SOAR Action.
@@ -22,7 +22,7 @@ from pipeline.soar_engine import SOAREngine
 
 def run_simulation():
     print("==========================================================================")
-    print("       FORENSYS BEHAVIOR-BASED EDR/XDR END-TO-END SIMULATION PIPELINE     ")
+    print("       FORENSYS END-TO-END DETECTION & RESPONSE SIMULATION PIPELINE       ")
     print("==========================================================================")
 
     config = get_config()
@@ -87,7 +87,7 @@ def run_simulation():
     print("STEP A: RUNNING MODULAR DETECTION RULES")
     print("--------------------------------------------------------------------------")
     alerts = rule_engine.evaluate_all(state_engine, config, now)
-    print(f"Generated {len(alerts)} behavioral alerts:")
+    print(f"Generated {len(alerts)} detection alerts:")
     for a in alerts:
         print(f"  [ALERT] {a.rule_name:<30} | Severity: {a.severity:<8} | Assets: {a.affected_assets}")
 

@@ -1,6 +1,6 @@
 """
 ForenSys Behavior State Engine
-Maintains rolling behavioral state over 5s, 10s, 30s, 1m (60s), and 5m (300s) windows.
+Maintains rolling per-source state over 5s, 10s, 30s, 1m (60s), and 5m (300s) windows.
 Tracks metrics per IP, process, parent process, port, protocol, DNS queries, and listening sockets.
 """
 

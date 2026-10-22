@@ -11,7 +11,7 @@ import { saveRule } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 export default function EDRRulesPage() {
-  // `ruleCatalog` (the 10 built-in behavioral rules) comes only from the live WS snapshot - it must never be
+  // `ruleCatalog` (the 10 built-in detection rules) comes only from the live WS snapshot - it must never be
   // fetched/overwritten here, or it flashes the unrelated, much shorter SOAR automation playbook list first.
   const { ruleCatalog = [], currentUser, updateRuleInCatalog, fetchRules } = useAppStore();
   const [mounted, setMounted] = useState(false);
@@ -109,7 +109,7 @@ export default function EDRRulesPage() {
             EDR Rules Catalog
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Active behavioral threat detection rules, sliding windows, and response orchestrations
+            Active threat detection rules, sliding windows, and response orchestrations
           </p>
         </div>
         <div className="flex items-center gap-2">

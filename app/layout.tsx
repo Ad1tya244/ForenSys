@@ -8,8 +8,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'FORENSYS - Enterprise SOC Platform',
-  description: 'Real-time security operations center with AI-powered threat analysis and forensic investigation',
+  title: 'FORENSYS - Forensic-Safe Endpoint Detection & Automated SOC Response Platform',
+  description: 'Forensic-safe endpoint detection and automated SOC response: real-time detection, logical containment and preserved forensic evidence',
   keywords: ['SOC', 'SIEM', 'cybersecurity', 'forensics', 'threat intelligence', 'incident response'],
   icons: {
     icon: [

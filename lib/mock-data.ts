@@ -84,7 +84,7 @@ const alertSources = [
   'Firewall',
   'Proxy Server',
   'Antivirus Engine',
-  'Behavioral Analytics',
+  'Rule-Based Analytics',
   'Vulnerability Scanner',
   'Web Application Firewall',
 ];
@@ -164,7 +164,7 @@ export function generateMockAlert(): Alert {
     id: generateId('ALT'),
     severity,
     title: randomElement(alertTitles),
-    description: `Automated detection triggered based on security rules and behavioral analysis. Multiple indicators of compromise detected on affected assets.`,
+    description: `Automated detection triggered based on security rules and threshold analysis. Multiple indicators of compromise detected on affected assets.`,
     source: randomElement(alertSources),
     timestamp: new Date(Date.now() - Math.random() * 86400000),
     status: randomElement(['new', 'acknowledged', 'investigating']),

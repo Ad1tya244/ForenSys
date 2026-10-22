@@ -1,11 +1,11 @@
 <h1 align="center">ForenSys</h1>
 
 <p align="center">
-  <strong>A behavior-based EDR/XDR and SOC response platform for a single host.</strong>
+  <strong>Forensic-Safe Endpoint Detection &amp; Automated SOC Response Platform</strong>
 </p>
 
 <p align="center">
-  ForenSys watches real host telemetry (packets, sockets, processes, logs), detects attacks with a stateful rule engine,
+  ForenSys watches real telemetry on a single host (packets, sockets, processes, logs), detects attacks with a stateful rule engine,
   raises correlated incidents, contains them with <em>logical</em> auto-remediation, seals forensic evidence, and gives
   analysts a live dashboard, accurate MTTD/MTTR analytics and downloadable PDF incident reports.
 </p>
@@ -61,7 +61,7 @@
   <tr>
     <td width="50%" valign="top">
       <img src="docs/screenshots/edr-rules.webp" alt="EDR Rules Catalog"><br>
-      <sub><b>EDR Rules Catalog</b> - 10 behavioral rules with MITRE mapping, confidence and live thresholds.</sub>
+      <sub><b>EDR Rules Catalog</b> - 10 detection rules with MITRE mapping, confidence and live thresholds.</sub>
     </td>
     <td width="50%" valign="top">
       <img src="docs/screenshots/host-logs.webp" alt="Host Log Diagnostics"><br>
@@ -81,7 +81,7 @@
 
 | Area | What you get |
 |---|---|
-| **Detection** | 10 stateful behavioral rules (scans, floods, brute force, C2 beaconing, reverse shells, exfiltration, rogue listeners, suspicious process chains) mapped to MITRE ATT&CK. Each attack is reported once per *episode*, not once per second. |
+| **Detection** | 10 stateful, threshold-based rules (scans, floods, brute force, C2 beaconing, reverse shells, exfiltration, rogue listeners, suspicious process chains) mapped to MITRE ATT&CK. Each attack is reported once per *episode*, not once per second. |
 | **Correlation** | Alerts sharing an entity (attacker IP, process) merge into one incident (`SCAN01`, `AUTH01`, `EXFIL01`, ...) with risk score, confidence and kill-chain stages. |
 | **Response** | One workflow for every detection: *detect → incident → contain → seal evidence → log history*. Containment = IP blocklist, DNS sinkhole or process flag, with one-click rollback and manual re-block. |
 | **Forensics** | Per-incident sealed package: attack-specific facts (e.g. every probed port), packets, logs, sockets, a headers-only `capture.pcap` and `evidence.json`, protected by a SHA-256 digest that is re-verified whenever it is reported. |

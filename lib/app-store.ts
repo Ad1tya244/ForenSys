@@ -935,7 +935,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fetchRules: async () => {
-    // Fetches the SOAR automation playbook list (`rules`) only. `ruleCatalog` (the EDR behavioral rule catalog
+    // Fetches the SOAR automation playbook list (`rules`) only. `ruleCatalog` (the EDR detection rule catalog
     // shown on the EDR Rules page) is a completely different list, sourced only from the WS snapshot's
     // `rule_catalog` field - overwriting it here used to cause the EDR Rules page to flash the 1-2 playbook
     // rules before the next snapshot corrected it back to the real 10-rule catalog a couple seconds later.
