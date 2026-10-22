@@ -58,7 +58,7 @@ class SuspiciousProcessChainRule(BaseRule):
                         metadata={
                             "parent_process": parent, "child_process": child, "process": child, "pid": ev.pid,
                             "ppid": ev.ppid, "quarantine_process": child, "first_seen": ev.timestamp,
-                            "detected_at": current_time, "mttd_sec": max(0.1, round(current_time - ev.timestamp, 2)),
+                            "detected_at": current_time, "mttd_sec": round(max(0.0, current_time - ev.timestamp), 3),
                             "attack_type": "process_chain",
                         }
                     ))

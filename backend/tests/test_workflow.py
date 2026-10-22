@@ -20,6 +20,7 @@ import pipeline.soar_engine as soar_module
 from collectors import injector, traffic
 from config import get_config
 from pipeline.correlation_engine import IncidentCorrelationEngine
+from pipeline.metrics import IncidentLedger
 from pipeline.evidence import EvidenceManager
 from pipeline.normalizer import EventNormalizer
 from pipeline.response import ResponseOrchestrator
@@ -42,13 +43,15 @@ class Pipeline:
         self.rules = RuleEngine()
         self.corr = IncidentCorrelationEngine()
         self.evidence = EvidenceManager(vault_path=os.path.join(tmp, "vault.json"), artifacts_dir=os.path.join(tmp, "evidence"))
-        self.orch = ResponseOrchestrator(self.soar, self.evidence, self.state)
+        self.ledger = IncidentLedger(path=os.path.join(tmp, "ledger.json"))
+        self.orch = ResponseOrchestrator(self.soar, self.evidence, self.state, self.ledger)
         self.norm = EventNormalizer()
         self.cfg = get_config()
         self.emitted = set()
         self.all_alerts = []
 
     def step(self, now=None):
+        pinned = now          # None => the orchestrator uses the real wall clock, exactly like main.py
         now = now or time.time()
         pkts = traffic.get_recent_traffic_packets()
         inj = injector.drain()
@@ -62,7 +65,7 @@ class Pipeline:
         incidents = self.corr.correlate(alerts, now)
         actions = []
         for inc in incidents:
-            actions += self.orch.handle(inc, now)
+            actions += self.orch.handle(inc, pinned)
         return fresh, actions
 
     def run(self, seconds=1.0, tick=0.25):
@@ -311,6 +314,45 @@ class WorkflowTests(unittest.TestCase):
         details = {d["ip"]: d for d in self.p.soar.get_blocked_ip_details()}
         self.assertEqual(details[atk]["status"], "active")
         self.assertIsNone(details[atk]["released_at"])
+
+    # ── Trusted dependencies must not raise false positives ─────────────────────
+
+    def test_project_dependencies_do_not_raise_new_listener_alerts(self):
+        from analyzers.threat_detector import ThreatDetector
+        det = ThreatDetector()
+        det.analyze([], [], [], [{"port": 8000, "ip": "0.0.0.0", "process": "Python", "pid": 1}])  # baseline cycle
+
+        listeners = [
+            {"port": 33060, "ip": "0.0.0.0", "process": "mysqld", "pid": 777},       # MySQL X protocol (the screenshot)
+            {"port": 3306, "ip": "0.0.0.0", "process": "mysqld", "pid": 777},
+            {"port": 51234, "ip": "127.0.0.1", "process": "node", "pid": 888},       # Next.js worker, loopback ephemeral
+            {"port": 49321, "ip": "127.0.0.1", "process": "python3.14", "pid": 999},
+        ]
+        self.assertEqual(det.analyze([], [], [], listeners), [], "own dependencies must stay quiet")
+
+    def test_untrusted_or_misplaced_listeners_still_alert(self):
+        from analyzers.threat_detector import ThreatDetector
+        det = ThreatDetector()
+        det.analyze([], [], [], [{"port": 8000, "ip": "0.0.0.0", "process": "Python", "pid": 1}])  # baseline cycle
+
+        listeners = [
+            {"port": 33060, "ip": "0.0.0.0", "process": "nc", "pid": 5001},          # right port, wrong process
+            {"port": 4444, "ip": "0.0.0.0", "process": "mysqld", "pid": 5002},       # right name, unexpected exposed port
+        ]
+        titles = [a["title"] for a in det.analyze([], [], [], listeners)]
+        self.assertEqual(len(titles), 2, titles)
+        self.assertTrue(any("33060" in t for t in titles) and any("4444" in t for t in titles))
+
+    def test_trusted_listener_events_are_ignored_by_rules_and_audited_once(self):
+        from pipeline.self_protection import asset_trust_manager
+        asset_trust_manager.audit_log.clear()
+        for _ in range(5):
+            injector.push("listener", {"port": 33060, "ip": "0.0.0.0", "process": "mysqld", "pid": 777})
+            injector.push("listener", {"port": 4444, "ip": "0.0.0.0", "process": "ncat", "pid": 5003})
+            fresh, _ = self.p.step()
+        self.assertTrue(any(e.is_trusted for e in self.p.state.events if e.process_name == "mysqld"))
+        self.assertEqual({a.rule_name for a in self.p.all_alerts}, {"Suspicious Listening Port"})
+        self.assertEqual(len([e for e in asset_trust_manager.audit_log if e["process"] == "mysqld"]), 1)
 
     # ── Clear History vs Reset Lab ──────────────────────────────────────────────
 

@@ -100,6 +100,12 @@ On the victim, spawn `nc` from `python3` (stands in for a macro/script launching
 python3 -c "import subprocess,time; subprocess.Popen(['nc','-l','5555']); time.sleep(60)"
 ```
 
+## After each run: grab the report
+
+Open **Reports**, find the incident (new ones appear automatically) and click **PDF** (or **Preview**). The report
+has the timeline, attack forensics, containment actions, the sealed evidence with an integrity re-check, packets and
+logs. **Analytics** shows MTTD (first attacker activity -> detection) and MTTR (detection -> containment) for the run.
+
 ## Resetting between runs
 
 Unblock just the attacker's IP from **Playbooks** (or `POST /api/remediation/unblock/<ip>`) so the next run against

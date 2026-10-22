@@ -65,7 +65,7 @@ class AuthAttackRule(BaseRule):
                     "src_ip": key_v4, "src_ip_raw": key, "attacker_ip": key_v4, "block_ip": key_v4,
                     "dst_ip": host_ip, "target_ip": host_ip, "total_failures": fails,
                     "services": sorted({e.process_name for e in fail_events}),
-                    "first_seen": first_seen, "mttd_sec": max(0.1, round(current_time - first_seen, 2)),
+                    "first_seen": first_seen, "mttd_sec": round(max(0.0, current_time - first_seen), 3),
                     "detected_at": current_time, "attack_type": "auth_attack",
                 }
             ))
@@ -100,7 +100,7 @@ class AuthAttackRule(BaseRule):
                         "src_ip": src_v4, "src_ip_raw": src, "attacker_ip": src_v4, "block_ip": src_v4,
                         "dst_ip": host_ip, "target_ip": host_ip, "services": [service], "service_port": port,
                         "connection_attempts": count, "threshold": net_threshold, "window_sec": window_sec,
-                        "first_seen": first_seen, "mttd_sec": max(0.1, round(current_time - first_seen, 2)),
+                        "first_seen": first_seen, "mttd_sec": round(max(0.0, current_time - first_seen), 3),
                         "detected_at": current_time, "attack_type": "auth_attack",
                     }
                 ))

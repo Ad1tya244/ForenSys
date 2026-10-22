@@ -41,7 +41,7 @@ class BruteForceAuthRule(BaseRule):
                 "entity": key_v4, "failed_attempts": fails, "successful_login": True,
                 "services": sorted({e.process_name for e in fail_events}),
                 "target_ip": host_ip, "dst_ip": host_ip, "first_seen": first_seen,
-                "mttd_sec": max(0.1, round(current_time - first_seen, 2)), "detected_at": current_time,
+                "mttd_sec": round(max(0.0, current_time - first_seen), 3), "detected_at": current_time,
                 "attack_type": "brute_force",
             }
             if is_ip:

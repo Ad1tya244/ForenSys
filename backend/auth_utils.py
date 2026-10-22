@@ -1,12 +1,49 @@
 import os
 import hashlib
+import secrets
 import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional
+from dotenv import load_dotenv
 
-# Load JWT settings from env
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-key-replace-in-prod-with-32-bytes")
+_ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+# Load backend/.env *here*: this module is imported before main.py calls load_dotenv, so reading the secret
+# first used to silently skip .env and fall through to a hard-coded default.
+load_dotenv(dotenv_path=_ENV_PATH)
+
+# The old hard-coded fallback is public (it was in the repo), so it must never be accepted as a real secret.
+_LEGACY_DEFAULT_SECRET = "super-secret-key-replace-in-prod-with-32-bytes"
+
+
+def _load_or_create_jwt_secret() -> str:
+    """Returns a strong JWT signing secret; generates and persists one to backend/.env on first run.
+
+    Anyone who knows the signing secret can forge a valid admin token, so there is deliberately no usable default.
+    Persisting (instead of a fresh random secret per process) keeps sessions valid across backend restarts.
+    """
+    secret = os.getenv("JWT_SECRET_KEY", "")
+    if len(secret) >= 32 and secret != _LEGACY_DEFAULT_SECRET:
+        return secret
+
+    secret = secrets.token_urlsafe(48)
+    try:
+        lines = []
+        if os.path.exists(_ENV_PATH):
+            with open(_ENV_PATH, "r") as f:
+                lines = [ln for ln in f.read().splitlines() if not ln.startswith("JWT_SECRET_KEY=")]
+        lines.append(f"JWT_SECRET_KEY={secret}")
+        # open(..., "w") rewrites in place (keeps the file's owner/permissions, even when run under sudo)
+        with open(_ENV_PATH, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print("[auth] No strong JWT_SECRET_KEY found - generated one and saved it to backend/.env "
+              "(existing logins are invalidated once; sign in again).")
+    except Exception as e:
+        print(f"[auth] WARNING: could not persist a generated JWT secret ({e}); sessions will reset on every restart.")
+    return secret
+
+
+JWT_SECRET_KEY = _load_or_create_jwt_secret()
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7

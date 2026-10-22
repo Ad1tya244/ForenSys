@@ -97,6 +97,9 @@ class ThreatDetector:
 
             if not rip or is_private_ip(rip):
                 continue
+            from pipeline.self_protection import asset_trust_manager
+            if conn.get("pid") in asset_trust_manager.registered_pids:
+                continue  # ForenSys's own processes (backend, Next.js, scapy) are not threats to report
 
             # Track timing and port spread per remote IP
             self._conn_times[rip].append(now)
@@ -194,6 +197,7 @@ class ThreatDetector:
                 ))
 
     def _rule_new_listener(self, current_listeners: List[Dict], out: List[Dict]) -> None:
+        from pipeline.self_protection import asset_trust_manager
         current_ports = {p["port"] for p in current_listeners}
         
         # On the first cycle, baseline the ports currently open without alerting
@@ -208,7 +212,12 @@ class ThreatDetector:
         for port in new_ports:
             if port in WHITELIST_REMOTE_PORTS:
                 continue
-            proc = next((p["process"] for p in current_listeners if p["port"] == port), "unknown")
+            owners = [p for p in current_listeners if p["port"] == port]
+            # Sockets opened by ForenSys itself or its dependencies (mysqld, the Python backend, Next.js) are expected
+            if owners and all(asset_trust_manager.is_trusted_listener(
+                    o.get("process", ""), port, o.get("ip", ""), o.get("pid"))[0] for o in owners):
+                continue
+            proc = owners[0]["process"] if owners else "unknown"
             aid = f"new-listener-{port}"
             if aid not in self._fired:
                 self._fired.add(aid)

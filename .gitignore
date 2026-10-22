@@ -163,6 +163,7 @@ backend/reports.json
 backend/rules.json
 backend/remediation_history.json
 backend/perimeter_registry.json
+backend/incident_ledger.json
 backend/evidence_vault.json
 backend/deleted_evidence.json
 backend/sim_vault.json
@@ -180,3 +181,7 @@ backend/scripts/sim_evidence/
 *.pcap
 *.pcapng
 *.json.bak
+
+# ─── Claude Code local tooling state (personal, not part of the project) ───────────
+.claude/settings.local.json
+.claude/.cc-writes/

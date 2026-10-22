@@ -47,6 +47,7 @@ class DataExfiltrationRule(BaseRule):
                 continue  # receive-heavy (or balanced) traffic - a normal download/stream/call, not exfil
 
             peer_v4 = ensure_ipv4(peer)
+            first_seen = snapshot.first_upload_by_peer.get(peer, current_time)
             mb = uploaded / (1024 * 1024)
             episode = self.episode_id(f"exfil-{peer_v4}", current_time)
             alerts.append(DetectionAlert(
@@ -70,7 +71,8 @@ class DataExfiltrationRule(BaseRule):
                     "transferred_bytes": uploaded, "transferred_mb": round(mb, 2),
                     "downloaded_bytes": downloaded, "upload_ratio": round(ratio, 2),
                     "threshold_bytes": limit_bytes, "window_sec": window_sec,
-                    "detected_at": current_time, "mttd_sec": 0.5, "attack_type": "data_exfil",
+                    "first_seen": first_seen, "detected_at": current_time,
+                    "mttd_sec": round(max(0.0, current_time - first_seen), 3), "attack_type": "data_exfil",
                 }
             ))
 

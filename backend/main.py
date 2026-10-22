@@ -8,6 +8,7 @@ Run:  python main.py
 """
 
 import asyncio
+import re
 import json
 import threading
 import time
@@ -19,7 +20,7 @@ from contextlib import asynccontextmanager
 import uvicorn  # type: ignore[import-untyped]
 from fastapi import (  # type: ignore[import-untyped]
     FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends,
-    status, Response, Request
+    status, Response, Request, Query
 )
 from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  # type: ignore[import-untyped]
@@ -107,9 +108,10 @@ def find_user_by_email(email: str) -> Optional[dict]:
                     u_copy["permissions"] = json.loads(u_copy["permissions"])
                 except Exception:
                     u_copy["permissions"] = []
-            if "password_hash" not in u_copy or not u_copy["password_hash"]:
-                u_copy["password_hash"] = hash_password_bcrypt("password123")
-                u_copy["salt"] = ""
+            # Legacy JSON accounts without a password hash have no valid credential. They simply cannot log in:
+            # no default password is ever assigned (this used to hand every such account "password123").
+            u_copy["password_hash"] = u_copy.get("password_hash") or ""
+            u_copy["salt"] = u_copy.get("salt") or ""
             return u_copy
     return None
 
@@ -137,9 +139,10 @@ def find_user_by_id(user_id: str) -> Optional[dict]:
                     u_copy["permissions"] = json.loads(u_copy["permissions"])
                 except Exception:
                     u_copy["permissions"] = []
-            if "password_hash" not in u_copy or not u_copy["password_hash"]:
-                u_copy["password_hash"] = hash_password_bcrypt("password123")
-                u_copy["salt"] = ""
+            # Legacy JSON accounts without a password hash have no valid credential. They simply cannot log in:
+            # no default password is ever assigned (this used to hand every such account "password123").
+            u_copy["password_hash"] = u_copy.get("password_hash") or ""
+            u_copy["salt"] = u_copy.get("salt") or ""
             return u_copy
     return None
 
@@ -199,6 +202,9 @@ from pipeline.evidence import EvidenceManager
 from pipeline.soar_engine import soar_engine
 from pipeline.self_protection import asset_trust_manager
 from pipeline.response import ResponseOrchestrator
+from pipeline.metrics import IncidentLedger, response_metrics, parse_iso, iso
+from reporting.incident_report import assemble_incident_data, render_incident_report
+from reporting.summary_report import render_summary_report
 
 detector = ThreatDetector()
 normalizer = EventNormalizer()
@@ -206,11 +212,14 @@ state_engine = BehaviorStateEngine()
 rule_engine = RuleEngine()
 correlation_engine = IncidentCorrelationEngine()
 evidence_manager = EvidenceManager()
-orchestrator = ResponseOrchestrator(soar_engine, evidence_manager, state_engine)
+incident_ledger = IncidentLedger()
+orchestrator = ResponseOrchestrator(soar_engine, evidence_manager, state_engine, incident_ledger)
 
-# Incident ids must stay unique across restarts (history/evidence are persisted, correlation state is not)
+# Incident ids must stay unique across restarts (history/evidence/ledger are persisted, correlation state is not)
 correlation_engine.seed_counters(
-    [log.incident_id for log in soar_engine.remediation_history] + [p.incident_id for p in evidence_manager.vault.values()]
+    [log.incident_id for log in soar_engine.remediation_history]
+    + [p.incident_id for p in evidence_manager.vault.values()]
+    + incident_ledger.ids()
 )
 
 _clients: List[WebSocket] = []
@@ -529,21 +538,29 @@ def _build_snapshot(new_alerts: List[dict], traffic: List[dict]) -> dict:
     }
 
 
+def _drop_client(ws: WebSocket) -> None:
+    if ws in _clients:
+        _clients.remove(ws)
+    _client_exp.pop(ws, None)
+
+
 async def _broadcast(snapshot: dict) -> None:
     global _latest_snapshot
     _latest_snapshot = snapshot
     if not _clients:
         return
     payload = json.dumps(snapshot, default=str)
-    dead = []
+    now = time.time()
     for ws in list(_clients):
         try:
+            if now >= _client_exp.get(ws, 0):
+                # Access token expired: stop streaming; the client refreshes its session and reconnects.
+                await ws.close(code=4003)
+                _drop_client(ws)
+                continue
             await ws.send_text(payload)
         except Exception:
-            dead.append(ws)
-    for ws in dead:
-        if ws in _clients:
-            _clients.remove(ws)
+            _drop_client(ws)
 
 
 async def detect_loop() -> None:
@@ -579,6 +596,9 @@ def _compute_threat_level(alerts: List[dict]) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    added = incident_ledger.backfill(evidence_manager, soar_engine)   # one-time: incidents that predate the ledger
+    if added:
+        print(f"[ledger] Added {added} pre-existing incident(s) from sealed evidence (MTTD/MTTR unknown for these).")
     # Load blocklist in background thread (don't block startup)
     t = threading.Thread(target=load_blocklist, daemon=True)
     t.start()
@@ -595,15 +615,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ForenSys SOC Backend", version="1.0.0", lifespan=lifespan)
 
+# The dashboard may be opened from this machine or another device on the same LAN, but never from an arbitrary
+# internet origin: with allow_credentials=True a catch-all origin regex would let any website you visit call
+# /api/auth/refresh with your session cookie and read back a fresh access token.
+_LAN_ORIGIN_REGEX = (
+    r"^https?://("
+    r"localhost|127\.0\.0\.1|\[::1\]"
+    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"|[\w-]+\.local"
+    r")(:\d+)?$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-    ],
-    allow_origin_regex=r"https?://.*",
+    allow_origin_regex=_LAN_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -612,32 +639,42 @@ app.add_middleware(
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
 
+_WS_AUTH_TIMEOUT_SEC = 5.0
+_client_exp: Dict[WebSocket, float] = {}   # ws -> access-token expiry (epoch); streams stop when it passes
+
+
+async def _ws_authenticate(ws: WebSocket) -> Optional[float]:
+    """First message must be {"type": "auth", "token": "<access token>"}.
+
+    The token travels in a message, not the URL, so it never shows up in uvicorn access logs or browser history.
+    Returns the token's expiry (epoch seconds) on success, or closes the socket (code 4003) and returns None.
+    """
+    try:
+        msg = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=_WS_AUTH_TIMEOUT_SEC))
+        token = msg.get("token") if isinstance(msg, dict) and msg.get("type") == "auth" else None
+    except Exception:
+        token = None
+
+    payload = decode_token(token) if isinstance(token, str) else None
+    if not payload or payload.get("type") != "access" or not isinstance(payload.get("sub"), str):
+        await ws.close(code=4003)
+        return None
+    user = await asyncio.to_thread(find_user_by_id, payload["sub"])   # same lookup (DB or users.json) as REST auth
+    if not user or user.get("status") != "active":
+        await ws.close(code=4003)
+        return None
+    return float(payload.get("exp") or (time.time() + 60))
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
-    token = ws.query_params.get("token")
-    if token:
-        payload = decode_token(token)
-        if not payload or payload.get("type") != "access":
-            await ws.close(code=4003)
-            return
-            
-        user_id = payload.get("sub")
-        conn = get_db_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT status FROM users WHERE id = %s", (user_id,))
-                user = cursor.fetchone()
-                if not user or user["status"] != "active":
-                    await ws.close(code=4003)
-                    return
-        except Exception:
-            await ws.close(code=4003)
-            return
-        finally:
-            conn.close()
-
     await ws.accept()
+    expires_at = await _ws_authenticate(ws)
+    if expires_at is None:
+        return
+
     _clients.append(ws)
+    _client_exp[ws] = expires_at
     print(f"[ws] Client connected ({len(_clients)} total)")
 
     # Send latest snapshot immediately so the UI populates instantly
@@ -649,8 +686,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             # Keep connection alive; client sends pings
             await ws.receive_text()
     except WebSocketDisconnect:
-        if ws in _clients:
-            _clients.remove(ws)
+        pass
+    finally:
+        _drop_client(ws)
         print(f"[ws] Client disconnected ({len(_clients)} remaining)")
 
 
@@ -680,6 +718,63 @@ def api_update_config(patch: dict, current_user: dict = Depends(check_permission
 @app.get("/api/incidents")
 def api_get_incidents(current_user: dict = Depends(get_current_user)):
     return [inc.to_dict() for inc in correlation_engine.incidents]
+
+
+_INCIDENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+
+
+def _ledger_view(r: dict) -> dict:
+    """Ledger record for the UI: ISO timestamps + whether sealed evidence is still on file."""
+    out = dict(r)
+    for key in ("first_activity_at", "detected_at", "contained_at", "updated_at"):
+        out[key] = iso(r.get(key))
+    out["has_evidence"] = evidence_manager.get_evidence(f"EVD-{r['id']}") is not None
+    return out
+
+
+@app.get("/api/incidents/ledger")
+def api_incident_ledger(current_user: dict = Depends(check_permissions("view_incidents"))):
+    """Persisted per-incident record (timing, MTTD/MTTR, attacker, evidence id) - the source for reports and analytics."""
+    return [_ledger_view(r) for r in incident_ledger.all()]
+
+
+@app.get("/api/incidents/{incident_id}/report.pdf")
+def api_incident_report(incident_id: str, current_user: dict = Depends(check_permissions("view_forensics"))):
+    """Full incident report as a PDF: summary, timeline, detections, attack forensics, containment, evidence & integrity."""
+    if not _INCIDENT_ID_RE.match(incident_id):
+        raise HTTPException(status_code=400, detail="Invalid incident id")
+    data = assemble_incident_data(incident_id, correlation_engine, incident_ledger, evidence_manager, soar_engine,
+                                  generated_by=current_user.get("email") or current_user.get("name") or "")
+    if not data:
+        raise HTTPException(status_code=404, detail=f"No data on file for incident {incident_id}")
+    return Response(
+        content=render_incident_report(data), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ForenSys-incident-{incident_id}.pdf"', "Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/reports/summary.pdf")
+def api_summary_report(start: str, end: str, current_user: dict = Depends(check_permissions("view_analytics"))):
+    """SOC summary PDF for an inclusive UTC date range (YYYY-MM-DD)."""
+    t0, t1 = parse_iso(f"{start}T00:00:00Z"), parse_iso(f"{end}T00:00:00Z")
+    if t0 is None or t1 is None:
+        raise HTTPException(status_code=400, detail="start and end must be YYYY-MM-DD")
+    t1 += 86400 - 0.001
+    if t1 < t0 or (t1 - t0) > 366 * 86400:
+        raise HTTPException(status_code=400, detail="Date range must be between 1 and 366 days")
+    records = [r for r in incident_ledger.all() if t0 <= (r.get("detected_at") or 0) <= t1]
+    return Response(
+        content=render_summary_report(records, t0, t1, current_user.get("email") or current_user.get("name") or ""),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ForenSys-summary-{start}_to_{end}.pdf"', "Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/analytics/response-metrics")
+def api_response_metrics(range_key: str = Query("all", alias="range"),
+                         current_user: dict = Depends(check_permissions("view_analytics"))):
+    """MTTD / MTTR (mean, median, p95), containment rate, breakdowns and trend, computed from the incident ledger."""
+    return response_metrics(incident_ledger.all(), range_key)
 
 
 @app.get("/api/evidence")
@@ -782,6 +877,7 @@ def api_reset_lab(current_user: dict = Depends(check_permissions("manage_playboo
     rule_engine.reset_episodes()
     soar_engine.reset_all()
     evidence_manager.clear_vault()
+    incident_ledger.clear()
     return {"status": "success", "message": "Lab reset: alerts, incidents, evidence, history and all active containment were cleared."}
 
 
@@ -1169,10 +1265,6 @@ def api_login(data: LoginModel, response: Response):
     if p_hash:
         matched, _ = verify_and_migrate_password(data.password, p_hash, p_salt)
     
-    if not matched:
-        if data.password in ("operator", "password", "admin", "password123", "operator123"):
-            matched = True
-
     if not matched:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     

@@ -289,7 +289,7 @@ class EvidenceManager:
         mine = [l for l in logs if l.get("src_ip") == ip or (ip and ip in l.get("message", ""))] or logs
         users = Counter()
         for l in mine:
-            m = re.search(r"for (?:invalid user )?(\S+) from", l.get("message", ""))
+            m = re.search(r"(?:[Ii]nvalid user |for (?:invalid user )?)(\S+) from", l.get("message", ""))
             if m and l.get("auth_failure"):
                 users[m.group(1)] += 1
         return {
@@ -401,7 +401,8 @@ class EvidenceManager:
             return None
 
     def seal(self, incident: CorrelatedIncident, payload: Dict[str, Any],
-             remediation_actions: Optional[List[Dict[str, Any]]] = None, now: Optional[float] = None) -> ForensicEvidencePackage:
+             remediation_actions: Optional[List[Dict[str, Any]]] = None, now: Optional[float] = None,
+             contained_at: Optional[float] = None) -> ForensicEvidencePackage:
         """Writes artifacts, hashes the payload with SHA-256 and seals it in the vault."""
         now = now if now else time.time()
         evd_id = f"EVD-{incident.id}"
@@ -412,12 +413,15 @@ class EvidenceManager:
             artifacts.append(pcap)
         payload["artifacts"] = artifacts
         payload["remediation_actions"] = remediation_actions or []
-        first_seen = [d.get("metadata", {}).get("first_seen") for d in incident.related_detections if d.get("metadata", {}).get("first_seen")]
+        from pipeline.metrics import incident_timing
+        t = incident_timing(incident)
         payload["timing"] = {
-            "first_activity_at": _iso(min(first_seen)) if first_seen else None,
-            "detected_at": _iso(incident.created_at),
+            "first_activity_at": _iso(t["first_activity_at"]),
+            "detected_at": _iso(t["detected_at"]),
+            "contained_at": _iso(contained_at),
             "sealed_at": _iso(now),
-            "mttd_sec": next((d["metadata"]["mttd_sec"] for d in incident.related_detections if d.get("metadata", {}).get("mttd_sec")), None),
+            "mttd_sec": t["mttd_sec"],
+            "mttr_sec": round(max(0.0, contained_at - incident.created_at), 3) if contained_at else None,
             "detection_to_seal_sec": round(max(0.0, now - incident.created_at), 3),
         }
 
@@ -451,6 +455,12 @@ class EvidenceManager:
 
     def get_evidence(self, evidence_id: str) -> Optional[ForensicEvidencePackage]:
         return self.vault.get(evidence_id)
+
+    @staticmethod
+    def verify(pkg: ForensicEvidencePackage) -> bool:
+        """Recomputes the SHA-256 of the sealed payload and compares it with the digest recorded at sealing time."""
+        digest = hashlib.sha256(json.dumps(pkg.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        return digest == pkg.sha256_hash
 
     def delete_evidence(self, evidence_id: str) -> bool:
         clean = evidence_id.strip().lower()

@@ -1,6 +1,7 @@
 'use client';
 
-import { BarChart3, TrendingUp, TrendingDown, Clock, Shield, Cpu, Activity } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BarChart3, TrendingUp, TrendingDown, Clock, Shield, Cpu, Activity, ShieldCheck, AlertTriangle } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -9,6 +10,8 @@ import {
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/lib/app-store';
+import { fetchResponseMetrics, MetricsRange, ResponseMetrics } from '@/lib/api-client';
+import { formatDuration } from '@/lib/format';
 
 const SEVERITY_COLORS = ['#ef4444', '#f97316', '#eab308', '#3b82f6'];
 
@@ -28,12 +31,45 @@ const CustomTooltipLabelStyle = {
   color: '#e2e8f0',
 };
 
+const RANGES: { key: MetricsRange; label: string }[] = [
+  { key: '24h', label: 'Last 24 h' },
+  { key: '7d', label: '7 days' },
+  { key: '30d', label: '30 days' },
+  { key: 'all', label: 'All time' },
+];
+
+const ATTACK_LABELS: Record<string, string> = {
+  port_scan: 'Port Scan', icmp_flood: 'ICMP Flood', syn_flood: 'SYN Flood', brute_force: 'Brute Force',
+  auth_attack: 'Auth Attack', dns_beacon: 'DNS Beaconing', reverse_shell: 'Reverse Shell', data_exfil: 'Data Exfiltration',
+  suspicious_listener: 'Suspicious Listener', process_chain: 'Process Chain', unknown: 'Unknown',
+};
+
 export default function AnalyticsPage() {
-  const { alerts, incidents, metrics, metricsHistory, connections, processes, remediationHistory } = useAppStore();
+  const { alerts, correlatedIncidents, metrics, metricsHistory, processes } = useAppStore();
+  const [range, setRange] = useState<MetricsRange>('24h');
+  const [rm, setRm] = useState<ResponseMetrics | null>(null);
+  const [rmFailed, setRmFailed] = useState(false);
+
+  // MTTD / MTTR and every incident statistic come from the backend incident ledger (real timestamps), never from
+  // heuristics on the client. Reload on range change, when a new incident appears, and on a slow timer.
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const data = await fetchResponseMetrics(range);
+        if (alive) { setRm(data); setRmFailed(false); }
+      } catch {
+        if (alive) setRmFailed(true);
+      }
+    };
+    load();
+    const timer = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [range, correlatedIncidents.length]);
 
   const activeAlerts = alerts.filter((a) => a.status !== 'resolved');
 
-  // 1. Compute Severity distribution from active alerts
+  // Alert severity distribution (actual alerts currently in the stream)
   const severityData = [
     { name: 'Critical', value: activeAlerts.filter((a) => a.severity === 'critical').length },
     { name: 'High', value: activeAlerts.filter((a) => a.severity === 'high').length },
@@ -41,87 +77,50 @@ export default function AnalyticsPage() {
     { name: 'Low', value: activeAlerts.filter((a) => a.severity === 'low').length },
   ];
 
-  // 2. Compute dynamic KPIs
-  // MTTD Rule: Time between first packet arrival from target till alert generation
-  const mttdList = alerts.map((a: any) => a.metadata?.mttd_sec || a.mttd_sec).filter((v: any) => typeof v === 'number');
-  const avgMttdSec = mttdList.length > 0
-    ? (mttdList.reduce((sum: number, v: number) => sum + v, 0) / mttdList.length).toFixed(1)
-    : '1.4';
-  const formattedMTTD = `${avgMttdSec} sec`;
-
-  // MTTR Rule: Time between alert raised and auto-remediation (IP block & evidence vault storage)
-  const mttrList = (remediationHistory || []).map((r: any) => r.result_details?.mttr_sec || r.mttr_sec).filter((v: any) => typeof v === 'number');
-  const avgMttrSec = mttrList.length > 0
-    ? (mttrList.reduce((sum: number, v: number) => sum + v, 0) / mttrList.length).toFixed(1)
-    : '0.9';
-  const formattedMTTR = `${avgMttrSec} sec`;
-
-  // 3. Calculate Playbook Success & SLA Compliance
-  const resolvedOrAckAlerts = alerts.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length;
-  const playbookSuccessRate = alerts.length > 0 ? Math.round((resolvedOrAckAlerts / alerts.length) * 100) : 100;
-  const playbookChange = 0;
-
-  const addressedAlerts = alerts.filter(a => a.status !== 'new').length;
-  const slaComplianceRate = alerts.length > 0 ? Math.round((addressedAlerts / alerts.length) * 100) : 100;
-  const slaChange = 0;
+  const rangeLabel = RANGES.find((r) => r.key === range)?.label.toLowerCase();
+  const timingSub = (t?: { n: number; median: number | null; p95: number | null }) =>
+    t && t.n > 0 ? `median ${formatDuration(t.median)} · p95 ${formatDuration(t.p95)} · n=${t.n}` : 'no samples in this period';
 
   const kpis = [
-    { label: 'Avg Response Time (MTTR)', value: formattedMTTR, change: -12, icon: Clock, color: 'text-accent', lowerIsBetter: true },
-    { label: 'MTTD', value: formattedMTTD, change: -15, icon: TrendingDown, color: 'text-green-400', lowerIsBetter: true },
-    { label: 'Playbook Success', value: `${playbookSuccessRate}%`, change: playbookChange, icon: Shield, color: 'text-accent', lowerIsBetter: false },
-    { label: 'SLA Compliance', value: `${slaComplianceRate}%`, change: slaChange, icon: TrendingUp, color: 'text-green-400', lowerIsBetter: false },
+    {
+      label: 'MTTD (mean time to detect)', value: formatDuration(rm?.mttd.mean), sub: timingSub(rm?.mttd),
+      change: rm?.mttd_change_pct ?? null, icon: TrendingDown, color: 'text-green-400', lowerIsBetter: true,
+    },
+    {
+      label: 'MTTR (mean time to remediate)', value: formatDuration(rm?.mttr.mean), sub: timingSub(rm?.mttr),
+      change: rm?.mttr_change_pct ?? null, icon: Clock, color: 'text-accent', lowerIsBetter: true,
+    },
+    {
+      label: 'Containment rate',
+      value: rm?.containment_rate == null ? 'n/a' : `${Math.round(rm.containment_rate * 100)}%`,
+      sub: rm ? `${rm.contained_incidents} of ${rm.total_incidents} incidents contained` : '',
+      change: rm?.containment_rate_change ?? null, icon: ShieldCheck, color: 'text-accent', lowerIsBetter: false,
+    },
+    {
+      label: 'Incidents', value: rm ? String(rm.total_incidents) : '–',
+      sub: rm?.previous_total_incidents != null ? `${rm.previous_total_incidents} in the previous period` : 'since the last reset',
+      change: null, icon: AlertTriangle, color: 'text-orange-400', lowerIsBetter: true,
+    },
   ];
 
-  // 3. Dynamic Incident / Security Detections Trend over the last 6 time buckets
-  const trendData = Array.from({ length: 6 }).map((_, idx) => {
-    const offset = 5 - idx;
-    const d = new Date(Date.now() - offset * 60 * 60 * 1000);
-    const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Live detections and incidents are grouped dynamically
-    const resolvedCount = alerts.filter(a => a.status === 'resolved').length;
-    // Base alerts count + a dynamic portion matching network activity
-    const baseDetected = alerts.length + (connections.length > 0 ? (connections.length % (idx + 2)) : 0);
-    const baseIncidents = incidents.length + (incidents.length > 0 ? (idx % 2 === 0 ? 1 : 0) : 0);
-
+  // Incident trend: hourly buckets for 24h, daily otherwise (real counts, no padding)
+  const trendData = (rm?.trend || []).map((b) => {
+    const d = new Date(b.time);
     return {
-      time: label,
-      incidents: baseIncidents,
-      detected: baseDetected,
-      resolved: resolvedCount + (idx % 2 === 0 ? Math.min(resolvedCount, idx) : 0),
+      time: range === '24h' ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }),
+      incidents: b.incidents,
+      contained: b.contained,
     };
   });
 
-  // 4. Dynamic weekly/interval-based MTTD & MTTR Trends
-  const mttrData = Array.from({ length: 6 }).map((_, idx) => {
-    const offset = 5 - idx;
-    const label = `T-${offset * 10}m`;
-    const mttdValue = alerts.length > 0 ? Math.max(0.1, Number(((10 + (metrics?.cpu_percent || 15) * 0.05 + (alerts.filter(a => a.status === 'new').length * 0.5) - idx * 0.2) / 60).toFixed(1))) : 0;
-    const mttrValue = Number(avgMttrSec) > 0 ? Math.max(0.2, Number(avgMttrSec) - (5 - idx) * 0.1) : 0.9;
+  // Per-incident MTTD (seconds) and MTTR (milliseconds): the two live on very different scales
+  const timingData = (rm?.series || []).map((p) => ({
+    id: p.id,
+    mttd: p.mttd_sec,
+    mttr: p.mttr_sec == null ? null : Math.round(p.mttr_sec * 1000),
+  }));
 
-    return {
-      interval: label,
-      mttd: mttdValue,
-      mttr: mttrValue,
-    };
-  });
-
-  // 5. Dynamic SOC Maturity Radar Chart
-  const detectionMaturity = Math.min(100, 75 + (alerts.filter(a => a.status === 'resolved' || a.status === 'acknowledged').length * 3));
-  const responseMaturity = slaComplianceRate !== null ? Math.min(100, Math.round(slaComplianceRate * 0.9)) : 0;
-  const containmentMaturity = Math.min(100, 70 + (incidents.filter(i => i.status === 'contained' || i.status === 'resolved').length * 10));
-  const recoveryMaturity = Math.min(100, 65 + (incidents.filter(i => i.status === 'resolved').length * 15));
-  const eradicationMaturity = Math.min(100, 60 + (processes.length > 0 ? 20 : 0));
-  const lessonsMaturity = Math.min(100, 50 + (incidents.length * 5));
-
-  const radarData = [
-    { subject: 'Detection', value: detectionMaturity },
-    { subject: 'Response', value: responseMaturity },
-    { subject: 'Containment', value: containmentMaturity },
-    { subject: 'Recovery', value: recoveryMaturity },
-    { subject: 'Eradication', value: eradicationMaturity },
-    { subject: 'Lessons', value: lessonsMaturity },
-  ];
+  const tacticData = (rm?.by_tactic || []).map((t) => ({ subject: t.tactic, value: t.count }));
 
   // 6. Compute top assets dynamically from alert frequency & suspicious processes
   const assetCounts = activeAlerts.reduce((acc, alert) => {
@@ -193,13 +192,30 @@ export default function AnalyticsPage() {
   return (
     <div className="flex-1 overflow-auto p-5 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <BarChart3 className="w-6 h-6 text-accent" />
-          Security Analytics
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Threat metrics, incident analytics, and SOC performance</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-accent" />
+            Security Analytics
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Detection &amp; response performance, computed from recorded incidents ({rangeLabel})
+          </p>
+        </div>
+        <div className="flex items-center gap-1 bg-black/40 border border-border/50 rounded-lg p-1 self-start">
+          {RANGES.map((r) => (
+            <button key={r.key} onClick={() => setRange(r.key)}
+              className={`px-3 py-1 rounded-md text-xs transition-colors ${range === r.key ? 'bg-accent/20 text-accent font-semibold' : 'text-muted-foreground hover:text-foreground'}`}>
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {rmFailed && (
+        <div className="text-xs text-yellow-300 bg-yellow-950/30 border border-yellow-800/40 rounded px-3 py-2">
+          Could not load incident analytics from the backend - showing the last known values.
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -218,6 +234,7 @@ export default function AnalyticsPage() {
                 <Icon className={`w-4 h-4 ${kpi.color}`} />
               </div>
               <div className={`text-2xl font-bold font-mono ${kpi.color}`}>{kpi.value}</div>
+              {kpi.sub && <div className="text-[11px] text-muted-foreground font-mono leading-snug">{kpi.sub}</div>}
               {kpi.change !== null && kpi.change !== undefined ? (
                 <div className={`text-xs flex items-center gap-1 ${
                   kpi.change === 0 ? 'text-muted-foreground' : 
@@ -228,10 +245,10 @@ export default function AnalyticsPage() {
                   ) : kpi.change < 0 ? (
                     <TrendingDown className="w-3 h-3" />
                   ) : null}
-                  {Math.abs(kpi.change)}% vs last period
+                  {Math.abs(kpi.change)}% vs previous period
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">No comparison data</div>
+                <div className="text-xs text-muted-foreground">{range === 'all' ? 'All-time figure' : 'No previous-period data to compare'}</div>
               )}
             </motion.div>
           );
@@ -242,19 +259,25 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Incident Trends */}
         <div className="glass rounded-lg p-4 border border-border/50">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Security Event Trends (Live SOC Activity)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="time" stroke="#555" style={{ fontSize: '11px' }} />
-              <YAxis stroke="#555" style={{ fontSize: '11px' }} />
-              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
-              <Legend wrapperStyle={{ fontSize: '11px' }} />
-              <Line type="monotone" dataKey="incidents" stroke="#f97316" dot={false} strokeWidth={2} name="Incidents" />
-              <Line type="monotone" dataKey="detected" stroke="#00c8ff" dot={false} strokeWidth={2} name="Signals / Detections" />
-              <Line type="monotone" dataKey="resolved" stroke="#22c55e" dot={false} strokeWidth={2} strokeDasharray="5 5" name="Resolved" />
-            </LineChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold text-foreground mb-4">Incident Trend (detected vs contained)</h3>
+          {trendData.every((d) => d.incidents === 0) ? (
+            <div className="h-55 flex flex-col items-center justify-center space-y-2 text-muted-foreground text-sm">
+              <Shield className="w-8 h-8 text-green-400 opacity-60" />
+              <span>No incidents in this period.</span>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="time" stroke="#555" style={{ fontSize: '11px' }} interval="preserveStartEnd" />
+                <YAxis stroke="#555" style={{ fontSize: '11px' }} allowDecimals={false} />
+                <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
+                <Legend wrapperStyle={{ fontSize: '11px' }} />
+                <Line type="monotone" dataKey="incidents" stroke="#f97316" dot={false} strokeWidth={2} name="Incidents detected" />
+                <Line type="monotone" dataKey="contained" stroke="#22c55e" dot={false} strokeWidth={2} strokeDasharray="5 5" name="Contained" />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         {/* Severity Distribution */}
@@ -300,35 +323,47 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* MTTD / MTTR */}
+        {/* MTTD / MTTR per incident */}
         <div className="glass rounded-lg p-4 border border-border/50">
-          <h3 className="text-sm font-semibold text-foreground mb-4">MTTD & MTTR Trends (Hourly / Live)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={mttrData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="interval" stroke="#555" style={{ fontSize: '11px' }} />
-              <YAxis yAxisId="left" stroke="#555" style={{ fontSize: '11px' }} />
-              <YAxis yAxisId="right" orientation="right" stroke="#555" style={{ fontSize: '11px' }} />
-              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
-              <Legend wrapperStyle={{ fontSize: '11px' }} />
-              <Bar yAxisId="left" dataKey="mttd" name="MTTD (min)" fill="#00c8ff" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="right" dataKey="mttr" name="MTTR (min)" fill="#f97316" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold text-foreground mb-4">MTTD &amp; MTTR per Incident</h3>
+          {timingData.length === 0 ? (
+            <div className="h-55 flex items-center justify-center text-muted-foreground text-sm">No incidents in this period.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={timingData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="id" stroke="#555" style={{ fontSize: '10px' }} />
+                <YAxis yAxisId="left" stroke="#00c8ff" style={{ fontSize: '11px' }} unit=" s" />
+                <YAxis yAxisId="right" orientation="right" stroke="#f97316" style={{ fontSize: '11px' }} unit=" ms" />
+                <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle}
+                  formatter={(v: any, name: any) => (v == null ? 'n/a' : name === 'MTTD (s)' ? `${v} s` : `${v} ms`)} />
+                <Legend wrapperStyle={{ fontSize: '11px' }} />
+                <Bar yAxisId="left" dataKey="mttd" name="MTTD (s)" fill="#00c8ff" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="right" dataKey="mttr" name="MTTR (ms)" fill="#f97316" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <p className="text-[10px] text-muted-foreground mt-2">
+            MTTD: first attacker activity to detection. MTTR: detection to containment. Uncontained incidents have no MTTR.
+          </p>
         </div>
 
-        {/* SOC Capability Radar */}
+        {/* MITRE tactics (replaces the formula-driven "maturity" radar) */}
         <div className="glass rounded-lg p-4 border border-border/50">
-          <h3 className="text-sm font-semibold text-foreground mb-4">SOC Capability Maturity (Dynamic Score)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <RadarChart data={radarData}>
-              <PolarGrid stroke="rgba(255,255,255,0.1)" />
-              <PolarAngleAxis dataKey="subject" tick={{ fill: '#888', fontSize: 11 }} />
-              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#666', fontSize: 10 }} />
-              <Radar name="Maturity Score" dataKey="value" stroke="#00c8ff" fill="#00c8ff" fillOpacity={0.15} />
-              <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
-            </RadarChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold text-foreground mb-4">Incidents by MITRE ATT&amp;CK Tactic</h3>
+          {tacticData.length === 0 ? (
+            <div className="h-55 flex items-center justify-center text-muted-foreground text-sm">No incidents in this period.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <RadarChart data={tacticData}>
+                <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#888', fontSize: 11 }} />
+                <PolarRadiusAxis angle={30} tick={{ fill: '#666', fontSize: 10 }} allowDecimals={false} />
+                <Radar name="Incidents" dataKey="value" stroke="#00c8ff" fill="#00c8ff" fillOpacity={0.2} />
+                <Tooltip contentStyle={CustomTooltipStyle} itemStyle={CustomTooltipItemStyle} labelStyle={CustomTooltipLabelStyle} />
+              </RadarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         {/* Live System Resources (CPU & Memory) */}
@@ -393,6 +428,40 @@ export default function AnalyticsPage() {
               </LineChart>
             )}
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Response performance by attack type */}
+      <div className="glass rounded-lg border border-border/50 p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3">Response Performance by Attack Type</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="text-muted-foreground uppercase tracking-wider text-[10px] border-b border-border/50">
+                <th className="py-2 pr-3">Attack type</th>
+                <th className="py-2 pr-3 text-right">Incidents</th>
+                <th className="py-2 pr-3 text-right">MTTD mean</th>
+                <th className="py-2 pr-3 text-right">MTTD p95</th>
+                <th className="py-2 pr-3 text-right">MTTR mean</th>
+                <th className="py-2 text-right">MTTR p95</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono divide-y divide-border/20">
+              {(rm?.by_attack_type || []).map((a) => (
+                <tr key={a.attack_type}>
+                  <td className="py-2 pr-3 text-foreground font-sans">{ATTACK_LABELS[a.attack_type] || a.attack_type}</td>
+                  <td className="py-2 pr-3 text-right">{a.count}</td>
+                  <td className="py-2 pr-3 text-right">{formatDuration(a.mttd.mean)}</td>
+                  <td className="py-2 pr-3 text-right">{formatDuration(a.mttd.p95)}</td>
+                  <td className="py-2 pr-3 text-right">{formatDuration(a.mttr.mean)}</td>
+                  <td className="py-2 text-right">{formatDuration(a.mttr.p95)}</td>
+                </tr>
+              ))}
+              {(rm?.by_attack_type || []).length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-muted-foreground font-sans">No incidents in this period.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

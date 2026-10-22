@@ -73,6 +73,9 @@ class CorrelatedIncident:
     entity_keys: Set[str] = field(default_factory=set)
     handled_alerts: Set[str] = field(default_factory=set)  # alert ids already run through the response workflow
     contained_at: Optional[float] = None
+    first_activity_at: Optional[float] = None
+    mttd_sec: Optional[float] = None
+    mttr_sec: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -99,6 +102,9 @@ class CorrelatedIncident:
             "quarantineProcesses": self.quarantine_processes,
             "attackTypes": self.attack_types,
             "containedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.contained_at)) if self.contained_at else None,
+            "firstActivityAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.first_activity_at)) if self.first_activity_at else None,
+            "mttdSec": self.mttd_sec,
+            "mttrSec": self.mttr_sec,
         }
 
 class IncidentCorrelationEngine:

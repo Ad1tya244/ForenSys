@@ -102,7 +102,7 @@ export default function AutoRemediationHistoryPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Reset the full lab state?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This clears all alerts, incidents, forensic evidence and the remediation history, and{' '}
+                  This clears all alerts, incidents, forensic evidence, the remediation history and the MTTD/MTTR analytics, and{' '}
                   <span className="text-red-400 font-semibold">unblocks every currently contained IP, domain and process</span>
                   {blockedIps.length > 0 && <> ({blockedIps.length} IP{blockedIps.length === 1 ? '' : 's'} currently blocked)</>}.
                   Use this between demo runs, not for routine log cleanup &mdash; that's what{' '}

@@ -67,7 +67,7 @@ class DNSBeaconingRule(BaseRule):
                         "process": entity, "domain": domain, "block_domain": domain, "query_count": len(timestamps),
                         "interval_sec": round(mean_interval, 2), "cov": round(cov, 2),
                         "first_seen": ts_sorted[0], "last_seen": ts_sorted[-1],
-                        "mttd_sec": max(0.1, round(current_time - ts_sorted[0], 2)),
+                        "mttd_sec": round(max(0.0, current_time - ts_sorted[0]), 3),
                         "detected_at": current_time, "attack_type": "dns_beacon",
                     }
                 ))

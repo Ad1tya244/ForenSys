@@ -64,7 +64,7 @@ class ReverseShellRule(BaseRule):
                     "src_ip": src_ip_v4, "process": ev.process_name, "pid": ev.pid, "remote_ip": rip_v4,
                     "remote_port": rport, "local_port": ev.src_port, "block_ip": rip_v4,
                     "quarantine_process": ev.process_name, "first_seen": ev.timestamp,
-                    "mttd_sec": max(0.1, round(current_time - ev.timestamp, 2)),
+                    "mttd_sec": round(max(0.0, current_time - ev.timestamp), 3),
                     "detected_at": current_time, "attack_type": "reverse_shell",
                 }
             ))

@@ -628,6 +628,101 @@ export async function unblockIp(ip: string): Promise<any> {
   return res.json();
 }
 
+// ── Incident ledger, analytics & PDF reports ──────────────────────────────────
+
+export interface IncidentLedgerRecord {
+  id: string;
+  title: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | string;
+  status: string;
+  risk_score: number | null;
+  attack_types: string[];
+  attacker_ips: string[];
+  mitre_stages: string[];
+  target_ip: string;
+  alert_count: number;
+  first_activity_at: string | null;
+  detected_at: string | null;
+  contained_at: string | null;
+  contained: boolean;
+  mttd_sec: number | null;
+  mttr_sec: number | null;
+  evidence_id: string | null;
+  has_evidence: boolean;
+  legacy?: boolean;
+}
+
+export interface TimingStats {
+  n: number;
+  mean: number | null;
+  median: number | null;
+  p95: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+export type MetricsRange = '24h' | '7d' | '30d' | 'all';
+
+export interface ResponseMetrics {
+  range: MetricsRange;
+  total_incidents: number;
+  contained_incidents: number;
+  containment_rate: number | null;
+  containment_rate_change: number | null;
+  mttd: TimingStats;
+  mttr: TimingStats;
+  mttd_change_pct: number | null;
+  mttr_change_pct: number | null;
+  previous_total_incidents: number | null;
+  by_severity: Record<string, number>;
+  by_attack_type: { attack_type: string; count: number; mttd: TimingStats; mttr: TimingStats }[];
+  by_tactic: { tactic: string; count: number }[];
+  trend: { time: string; incidents: number; contained: number }[];
+  series: { id: string; detected_at: string; severity: string; attack_type: string; mttd_sec: number | null; mttr_sec: number | null }[];
+}
+
+export async function fetchIncidentLedger(): Promise<IncidentLedgerRecord[]> {
+  const res = await authFetch(`${BACKEND_URL}/api/incidents/ledger`);
+  if (!res.ok) throw new Error('Failed to load incidents');
+  return res.json();
+}
+
+export async function fetchResponseMetrics(range: MetricsRange): Promise<ResponseMetrics> {
+  const res = await authFetch(`${BACKEND_URL}/api/analytics/response-metrics?range=${range}`);
+  if (!res.ok) throw new Error('Failed to load analytics');
+  return res.json();
+}
+
+/** Fetches a PDF with the session token (a plain <a href> would be unauthenticated). */
+async function fetchPdf(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await authFetch(`${BACKEND_URL}${path}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Request failed (${res.status})` }));
+    throw new Error(err.detail || 'Could not generate the report');
+  }
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return { blob: await res.blob(), filename: match ? match[1] : 'forensys-report.pdf' };
+}
+
+export const fetchIncidentReportPdf = (incidentId: string) =>
+  fetchPdf(`/api/incidents/${encodeURIComponent(incidentId)}/report.pdf`);
+
+export const fetchSummaryReportPdf = (start: string, end: string) =>
+  fetchPdf(`/api/reports/summary.pdf?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+
+/** Triggers a browser download for a PDF blob. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export async function clearHistory(): Promise<any> {
   // Clears the remediation AUDIT LOG only. Active containment (blocked IPs/domains, quarantined processes) is
   // left untouched - use resetLab() to release that too.
@@ -650,6 +745,8 @@ export async function resetLab(): Promise<any> {
 
 type SnapshotHandler = (snapshot: BackendSnapshot) => void;
 
+const WS_AUTH_FAILED = 4003; // server closes with this when the token is missing/invalid/expired
+
 export class BackendSocket {
   private ws: WebSocket | null = null;
   private handler: SnapshotHandler;
@@ -660,13 +757,16 @@ export class BackendSocket {
     this.handler = handler;
   }
 
+  /** Opens the stream. The server requires an access token, sent as the first message (never in the URL). */
   connect(token?: string): void {
-    if (this.ws) return;
+    if (this.ws || !token) return;
     try {
-      const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
-      this.ws = new WebSocket(url);
+      const ws = new WebSocket(WS_URL);
+      this.ws = ws;
 
-      this.ws.onmessage = (event) => {
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
+
+      ws.onmessage = (event) => {
         try {
           const data: BackendSnapshot = JSON.parse(event.data);
           this.handler(data);
@@ -675,20 +775,29 @@ export class BackendSocket {
         }
       };
 
-      this.ws.onclose = () => {
-        this.ws = null;
-        if (this.alive) {
-          // Reconnect after 3 seconds
+      ws.onclose = (event) => {
+        if (this.ws === ws) this.ws = null;
+        if (!this.alive) return;
+        if (event.code === WS_AUTH_FAILED) {
+          void this.refreshThenReconnect(); // access tokens last 15 min: renew the session instead of looping
+        } else {
           this.reconnectTimer = setTimeout(() => this.connect(accessToken || undefined), 3000);
         }
       };
 
-      this.ws.onerror = () => {
-        this.ws?.close();
-        this.ws = null;
-      };
+      ws.onerror = () => ws.close();
     } catch {
       this.reconnectTimer = setTimeout(() => this.connect(accessToken || undefined), 3000);
+    }
+  }
+
+  private async refreshThenReconnect(): Promise<void> {
+    try {
+      const res = await refreshSession();
+      setAccessToken(res.access_token);
+      if (this.alive) this.connect(res.access_token);
+    } catch {
+      if (onAuthErrorCallback) onAuthErrorCallback(); // refresh token is gone too: sign out
     }
   }
 

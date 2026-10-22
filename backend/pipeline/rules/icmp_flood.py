@@ -35,7 +35,7 @@ class ICMPFloodRule(BaseRule):
             src_ip_v4 = ensure_ipv4(src_ip)
             first_seen = snapshot.first_seen_by_src.get(src_ip, current_time)
             last_seen = snapshot.last_seen_by_src.get(src_ip, current_time)
-            mttd_sec = max(0.1, round(current_time - first_seen, 2))
+            mttd_sec = round(max(0.0, current_time - first_seen), 3)
             targets = sorted(snapshot.icmp_dsts_by_src.get(src_ip, set()))
             kind = "ICMP Ping Sweep" if len(targets) >= 5 else "ICMP Flood"
             episode = self.episode_id(f"icmp-{src_ip_v4}", current_time)

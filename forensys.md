@@ -11,7 +11,7 @@
 ---
 
 ## Elevator Pitch
-ForenSys is a modern, high-performance Security Operations Center (SOC) dashboard and automated response platform designed for enterprise threat response. It integrates a real-time host telemetry engine written in Python (FastAPI) with an interactive, cyber-themed frontend built in Next.js (TypeScript) using WebSockets. By mapping system telemetry, sniffing packets via BPF filters, and evaluating threat heuristics on a 3-second cycle, ForenSys enables security teams to correlate alerts, escalate indicators of compromise (IOCs) into formal incidents, and execute immediate SOAR containment actions.
+ForenSys is a modern, high-performance Security Operations Center (SOC) dashboard and automated response platform designed for enterprise threat response. It integrates a real-time host telemetry engine written in Python (FastAPI) with an interactive, cyber-themed frontend built in Next.js (TypeScript) using WebSockets. By mapping system telemetry, sniffing packets via BPF filters, and evaluating threat heuristics on a 1-second detection cycle (with a 3-second cycle for slower host telemetry), ForenSys enables security teams to correlate alerts, escalate indicators of compromise (IOCs) into formal incidents, and execute immediate SOAR containment actions.
 
 ---
 
@@ -33,7 +33,7 @@ ForenSys was built to demonstrate that security analysis consoles can be low-lat
 ForenSys implements a decoupled agent-server architecture:
 - **Telemetry Backend:** A Python server powered by FastAPI that performs raw telemetry collection on a continuous background loop. It gathers system performance (via `psutil`), active network connections mapping local/remote sockets to owner processes (via `psutil` or `lsof` fallback), active listening ports, geolocated peer associations (via cached `ipapi.co` requests), local ARP table discoveries, and live host logs (via macOS `log show` predicate filters or Linux syslog tails).
 - **BPF Packet Sniffer:** A background sniffer powered by Scapy that taps into local interfaces (e.g., `/dev/bpf*` on macOS) to extract TCP, UDP, and ICMP headers. It features an expanded thread-safe packet queue (5,000 entries) and automatically filters high-frequency WebRTC media streams (audio/video/screen sharing) to mitigate telemetry noise. When running in non-privileged modes, it gracefully fails over to a high-fidelity socket simulator matching active process targets to maintain a live feed.
-- **Threat Correlation Engine:** A modular, stateful correlation engine that automatically discovers and evaluates 10 security rules (including SYN floods, auth spikes, reverse shells, and data exfiltration) mapped to MITRE ATT&CK tactics. Detected threats are escalated to the incident manager, broadcasted via de-duplicated JSON-serialized WebSockets, and evaluated against active SOAR playbooks.
+- **Threat Correlation Engine:** A modular, stateful correlation engine that automatically discovers and evaluates 10 security rules (including SYN floods, auth spikes, reverse shells, and data exfiltration) mapped to MITRE ATT&CK tactics. Detected threats are escalated to the incident manager, broadcasted via de-duplicated JSON-serialized WebSockets, and run through the automated response workflow: logical containment, sealed forensic evidence, audit history.
 - **Unified Analyst Console:** A responsive Next.js web application utilizing Tailwind CSS, Framer Motion, and Recharts. The client establishes a WebSocket connection to the backend, loading state instantly into a Zustand global store, displaying live alert tickers, resource charts, topology maps, and providing an interactive, context-aware AI assistant (Iris) powered by Gemini.
 
 ---
@@ -47,9 +47,10 @@ ForenSys implements a decoupled agent-server architecture:
 - **Log Explorer:** A system log inspector capturing active OS log streams (macOS `log` query or Linux auth/syslog files). Features a dynamic stacked level density distribution bar, regex search mode with real-time error syntax feedback, inline query term highlighting, CSV/JSON report exporters, and an expanded drawer with direct Iris analyzer hooks.
 - **Network Architecture Map:** Interactive SVG-based network topology mapping that highlights compromised nodes, local interfaces, and traffic pathways.
 - **Local Asset Discovery:** Scans the local subnet in real-time using ARP table extraction, mapping hostnames, IP addresses, MAC addresses, and active interfaces.
-- **Security Analytics Console:** Visualizes MTTD (Mean Time to Detect), MTTR (Mean Time to Resolve), asset risk distribution radar charts, and alert severity trends.
-- **SOAR Automation Workspace:** Configures "If/Then" active threat response rules to contain security incidents. Triggers match by severity and rule name/description patterns (e.g. ICMP or Scan alerts) and execute automated containment like blocking attacker source IPs (excluding local loopbacks/host IPs) or killing malicious processes. Wipes both execution history and active firewall rules on clear commands.
-- **Zustand-Powered Incident Manager:** Allows analysts to acknowledge/resolve alerts, escalate alerts into formal incident files, and auto-generate sealed forensic evidence packages complete with custom SHA-256 integrity checksums. Integrates persistent tracking for deleted evidence timestamps (via `deleted_evidence.json`) to prevent auto-regeneration of bundles unless new alerts fire.
+- **Security Analytics Console:** MTTD (Mean Time To Detect = first attacker activity to detection) and MTTR (Mean Time To Remediate = detection to completion of the last containment action) computed per incident from real backend timestamps and kept in a persisted incident ledger. Shown as mean / median / p95 with sample counts and a genuine previous-period comparison, plus containment rate, incident trend, per-incident timing, MITRE tactic breakdown and a per-attack-type response table.
+- **PDF Incident & Summary Reports:** One-click PDF for every incident (executive summary, millisecond timeline, detections, attack-specific forensics, containment actions, sealed-evidence integrity re-check, packets, logs, host context, recommendations) plus a date-range SOC summary, generated server-side by a dependency-free PDF writer.
+- **SOAR Auto-Remediation (logical containment):** Every incident follows one workflow - detect, raise incident, contain, seal evidence, log to history. Containment never touches the OS firewall, processes or files: a block adds the attacker to a perimeter blocklist that the packet sniffer ignores until an analyst manually unblocks it (unblocked IPs stay listed so they can be re-blocked), domains are sinkholed the same way, and processes are only flagged in a registry. The blocklist is persisted separately from the audit log, so "Clear History" never silently releases a block; "Reset Lab" is the explicit full wipe.
+- **Zustand-Powered Incident Manager:** Allows analysts to acknowledge/resolve alerts, escalate alerts into formal incident files, and auto-generate sealed forensic evidence packages complete with custom SHA-256 integrity checksums. Each incident has exactly one sealed package (`EVD-<incident id>`) written at containment time, with a headers-only `capture.pcap` and `evidence.json` saved alongside it.
 - **Granular RBAC System:** Restricts frontend dashboard components and protects REST APIs using JSON Web Tokens (JWT) and custom roles (`Admin`, `Analyst`, `Responder`, `Viewer`) mapping to 12 distinct permission scopes.
 - **Context-Aware AI Security Assistant (Iris):** A built-in sidebar copilot that analyzes live SOC state (metrics, active alerts, incidents) to reconstruct attack paths and suggest containment steps. Powered by the Gemini API (`gemini-2.5-flash`) with a 4-part rules-based local heuristic fallback if no API key is set.
 
@@ -131,9 +132,9 @@ ForenSys implements a decoupled agent-server architecture:
 |  |                                                                                                                    |  |
 |  |  +--------------------------------------------------------------------------------------------------------------+  |  |
 |  |  |  FastAPI Main Entrypoint (main.py)                                                                           |  |  |
-|  |  |  - lifespan(app) -> Initializes blocklists, Sniffing threads & schedules async collect_loop() every 3 seconds |  |  |
-|  |  |  - websocket_endpoint("/ws") -> Validates JWT token, accepts socket, pushes immediate first cache snapshot  |  |  |
-|  |  |  - CORSMiddleware -> Restricts access to localhost:3000/3001                                                |  |  |
+|  |  |  - lifespan(app) -> Starts sniffer, auth-log stream and net(1s) / slow(3s) / detect(1s) loops                |  |  |
+|  |  |  - websocket_endpoint("/ws") -> 1st message must be {type:auth, token}; closes 4003 otherwise                |  |  |
+|  |  |  - CORSMiddleware -> Allows localhost/LAN origins only                                                       |  |  |
 |  |  +-------------------------------------+-------------------------------------+----------------------------------+  |  |
 |  |                                        |                                     |                                     |  |
 |  |                                        v Collects raw datasets               v Evaluates telemetry                 |  |
@@ -152,7 +153,7 @@ ForenSys implements a decoupled agent-server architecture:
 |  |  |    - Traverses system tree; flags high resources (>80% CPU) & miners      |     (loaded from rules.net URL)  |  |  |
 |  |  |                                                                           |   - is_private_ip() check        |  |  |
 |  |  |  * logs.py (system event log streams)                                     |     (protects internal ranges)   |  |  |
-|  |  |    - MacOS: log show --last 5m predicating sshd/sudo/configd/filter       |   - get_geolocation() lookup     |  |  |
+|  |  |    - MacOS: log show + live `log stream` for sshd/sudo       |   - get_geolocation() lookup                  |  |  |
 |  |  |    - Linux: parses auth.log / syslog files via tail                    |     via ipapi.co JSON queries    |  |  |
 |  |  |                                                                           |   - Process cache wrapper        |  |  |
 |  |  |  * traffic.py (BPF packet sniffer & simulator)                             |     @lru_cache(maxsize=1000)     |  |  |
@@ -184,8 +185,8 @@ ForenSys implements a decoupled agent-server architecture:
 |  |  |    - role (VARCHAR(50))               |                   | Local Configuration & Backup Files (.json)      |  |  |
 |  |  |    - department (VARCHAR(255))        |                   | - rules.json: stores SOAR "If/Then" playbooks   |  |  |
 |  |  |    - status (VARCHAR(50) active/inact)|                   | - settings.json: notification thresholds/toggles|  |  |
-|  |  |    - permissions (TEXT JSON array)    |                   | - reports.json: saves generated PDF/CSV logs     |  |  |
-|  |  |                                       |                   | - deleted_evidence.json: deleted timestamps     |  |  |
+|  |  |    - permissions (TEXT JSON array)    |                   | - reports.json: legacy (PDFs are on-demand)      |  |  |
+|  |  |                                       |                   | - incident_ledger.json: MTTD/MTTR ledger         |  |  |
 |  |  +---------------------------------------+                   +-------------------------------------------------+  |  |
 |  +--------------------------------------------------------------------------------------------------------------------+  |
 +==========================================================================================================================+
@@ -242,7 +243,7 @@ graph TB
         JSONRules[rules.json<br/>SOAR Playbooks]
         JSONSettings[settings.json<br/>System Configurations]
         JSONReports[reports.json<br/>Exported Forensic Data]
-        JSONDeletedEvidence[deleted_evidence.json<br/>Deleted Evidence Timestamps]
+        JSONLedger[incident_ledger.json<br/>Incident Ledger MTTD / MTTR]
     end
 
     %% Frontend interactions
@@ -256,7 +257,7 @@ graph TB
     ChatAPI -.->|Fallback Heuristics| IrisUI
 
     %% Transport Connections
-    WSC <-->|WebSocket Stream<br/>3s interval updates| WSS
+    WSC <-->|WebSocket Stream<br/>1-3s updates| WSS
     AC -->|REST requests with JWT| REST
 
     %% Backend Routing
@@ -288,7 +289,7 @@ graph TB
     %% Data Persistence
     AuthUtils <-->|Bcrypt Verify / Read User| DB
     REST <-->|Save settings/rules/reports| JSONRules & JSONSettings & JSONReports
-    REST & Main <-->|Manage evidence & deletions| JSONReports & JSONDeletedEvidence
+    REST & Main <-->|Manage evidence & deletions| JSONReports & JSONLedger
     
     %% Security Authorization Path
     REST -.->|Validate access permissions| JWT
@@ -297,10 +298,10 @@ graph TB
 ```
 
 ### Data Flow Overview
-1. **Telemetry Capture:** Every 3 seconds, the Python background execution loop triggers telemetry collectors (`psutil` system metrics, network connections, process listings, macOS log streams, and local ARP tables). Concurrently, the Scapy packet sniffer logs raw packets thread-safely into a sliding queue, automatically filtering out high-frequency WebRTC audio/video/screen-sharing media streams.
-2. **Threat Enrichment & Evaluation:** Network IP addresses are checked against the Emerging Threats blocklist. Public IPs are resolved geolocated via `ipapi.co` and stored in a process-wide `lru_cache`. The collected metrics are fed into the `ThreatDetector` engine to evaluate 7 heuristic rules, while the modular rule engine dynamically discovers and runs 10 stateful rules (like reverse shells or ICMP floods).
-3. **SOAR Rule Check:** If a threat alert matches active playbooks defined in `rules.json` based on severity or rule-name pattern matches, the rule hit count is updated, the last fired timestamp is set, and automated console logs or active containment blocks (excluding local/host IPs) are triggered.
-4. **WebSocket Broadcast:** The correlated telemetry snapshot (timestamp, metrics, connections, processes, logs, new alerts, network packets, and ARP devices) is serialized to JSON, filtered for duplicate alert notifications via emitted UUID tracking, and broadcast to all connected WebSocket clients.
+1. **Telemetry Capture (two speeds):** A 1-second loop collects sockets, listening ports and new processes and a 3-second loop collects system metrics, system logs and ARP devices - both run their blocking collectors in worker threads so the event loop never stalls. sshd/sudo lines are tailed live (`log stream` on macOS, `tail -F` on Linux). Concurrently, one continuous Scapy capture logs raw packets (stamped with their real capture time) into a sliding queue, filtering out WebRTC media streams.
+2. **Detection & Correlation (every second):** Packets and events feed the `BehaviorStateEngine`; 10 stateful rules run each tick, each tracking an attack "episode" so a sustained attack is reported once. Alerts are correlated into incidents by shared entities (IP, process). Network IPs are checked against the Emerging Threats blocklist and public IPs are geolocated (cached), while the legacy `ThreatDetector` covers suspicious ports, blocklist hits, offensive tools and new listeners (ForenSys's own dependencies such as `mysqld` are trusted).
+3. **Response Workflow:** For every new incident the `ResponseOrchestrator` snapshots the attack telemetry, executes the logical containment plan (blocklist / sinkhole / process flag), seals the evidence package with SHA-256, appends everything to the remediation history and records the incident's MTTD/MTTR in the incident ledger.
+4. **WebSocket Broadcast:** The snapshot (metrics, connections, processes, logs, alerts, incidents, evidence, remediation history, blocklist, packets) is serialized and broadcast only to clients that authenticated with a valid access token (sent as the first message; the stream stops when the token expires and the client silently renews its session).
 5. **Frontend State Consumption:** The Zustand store receives the JSON payload, merges and de-duplicates new alerts and notifications, logs notifications to the user, and updates live Recharts graphs.
 6. **AI Assistant Copilot Query:** The user chats with Iris. The client queries Next.js `/api/chat` route, passing the request history and current SOC context. If `GEMINI_API_KEY` is present, the API structures a prompt and communicates with Gemini; otherwise, the route's local heuristic engine handles the response.
 
@@ -329,7 +330,7 @@ graph TB
 
 ### Persistent Databases & Storage
 - **MySQL / MariaDB (Port 3306):** Serves as the primary transactional storage for user access records, RBAC permissions, and login hashes.
-- **JSON Configuration Files:** Local files (`rules.json`, `settings.json`, `reports.json`) are maintained in the backend directory to isolate playbooks, user console settings, and exported PDF/CSV report listings from standard DB schemas.
+- **JSON Configuration Files:** Local files (`rules.json`, `settings.json`, `remediation_history.json`, `perimeter_registry.json`, `incident_ledger.json`, `evidence_vault.json`) are maintained in the backend directory to keep playbooks, console settings, the audit log, the active blocklist, the incident/MTTD-MTTR ledger and the evidence vault out of the user DB.
 
 ---
 
@@ -337,7 +338,7 @@ graph TB
 Based on the project requirements and implementation specifications, I led the core design, backend development, and frontend integration of ForenSys. My contributions include:
 
 1. **Telemetry Pipeline & WebSocket Architecture:**
-   - Architected a WebSocket-based telemetry pipeline using FastAPI and Next.js (Zustand), delivering live system resource metrics, active processes, and socket events on a 3-second cycle.
+   - Architected a WebSocket-based telemetry pipeline using FastAPI and Next.js (Zustand), delivering live system resource metrics, active processes, and socket events on a 1-3 second cycle.
    - Designed the JSON-serialization process and client-side snapshot merge algorithm, enabling real-time UI updates without browser lag.
    - Implemented dynamic de-duplication for emitted alert IDs to block duplicate notifications from flooding the console.
 2. **Network Sniffing & Geolocation Infrastructure:**
@@ -348,10 +349,10 @@ Based on the project requirements and implementation specifications, I led the c
 3. **Correlation Engine & Security Heuristics:**
    - Architected a modular rules engine that dynamically walks the rules catalog, loading 10 independent threat checkers mapped to MITRE ATT&CK stages.
 4. **SOAR Processor & Automated Playbooks:**
-   - Designed and implemented the SOAR automation rule validator. Playbooks execute custom blocking actions (using dynamic IP matching to protect the local host/loopbacks) and feature clean database rollbacks via `unblock_ip` commands.
+   - Designed and implemented the response orchestrator and SOAR engine: logical containment (perimeter blocklist, DNS sinkhole, process flag) with self-protection for the local host, one-click rollback, and a persisted blocklist that is independent of the audit log.
 5. **RBAC & JWT Security Architecture:**
    - Bootstrapped a secure authentication system featuring JWT access tokens (passed via Bearer headers) and HttpOnly refresh cookies.
-   - Implemented Admin-only RBAC checking for forensic package deletions, writing deletions to a persistent timestamp logger (`deleted_evidence.json`) to prevent immediate auto-regeneration of bundles.
+   - Implemented Admin-only RBAC checking for forensic package deletions, authenticated the live WebSocket stream (token sent as the first message, never in the URL, enforced against token expiry), restricted CORS to localhost/LAN origins and made the JWT signing secret auto-generate instead of falling back to a public default.
    - Built the database schema initializer (`init_db.py`) using PyMySQL.
 6. **Gemini-Powered AI Copilot (Iris):**
    - Implemented the Next.js `/api/chat` route and `copilot-sidebar.tsx` user interface.
@@ -380,9 +381,9 @@ Based on the project requirements and implementation specifications, I led the c
 **The Challenge:** Real-time BPF packet sniffing captures every packet crossing physical host interfaces. When the user participates in high-bandwidth activities like screen shares, video calls, or stream ingestion (WebRTC/STUN), it generates thousands of packets per second, causing thread-safe deques to overflow and consuming excessive CPU resources during parsing.
 **The Solution:** Implemented high-frequency stream filtering inside Scapy's packet processing callback (`_process_scapy_packet`). The engine matches packet headers against typical WebRTC/media UDP ports (specifically ranges `19302-19309`, `50000-60000`, and STUN/TURN ports `3478-3481`). Any packet falling inside these ranges is immediately ignored unless it represents a DNS query. Additionally, the global telemetry queue (`_packet_queue`) was scaled from a max capacity of 100 to 5,000 packets to tolerate sudden bursts of legitimate traffic.
 
-### 5. Persistent Forensic Evidence De-duplication & Post-Deletion Re-generation Control
-**The Challenge:** Incident escalation generates forensic evidence bundles by collecting recent telemetry. If an analyst deletes a forensic evidence package, the backend collection loop, running every 3 seconds, could immediately detect the same unresolved incident conditions and regenerate the deleted bundle automatically, filling up storage and rendering the deletion action useless.
-**The Solution:** Built a persistent tracking database (`deleted_evidence.json`) mapping incident IDs to deletion timestamps. When an evidence bundle is deleted (now protected by Admin-only RBAC checking), the system stores its ID and current epoch. During the telemetry compilation cycle, `EvidenceManager` evaluates if the incident's `updated_at` timestamp is older than or equal to the deletion record. If no new alerts have fired since deletion, it prevents regeneration. If a fresh threat alert is correlated, it updates `updated_at` past the deletion timestamp, clearing the deletion marker to capture the new activity.
+### 5. One Sealed Evidence Package per Incident, Without Duplicate Alerts or Reused IDs
+**The Challenge:** The detection loop runs every second, and an attack that is still ongoing keeps matching its rule. Naively this re-raises the same alert (alert IDs were bucketed by time, so they changed every 10-60 s) and re-collects evidence, producing duplicate incidents. Incident IDs were also counted from in-memory state, so after a backend restart a repeat attack reused an ID like `SCAN01` and was silently skipped because history already held an action for it.
+**The Solution:** Each rule tracks an attack "episode" (a stable ID that only changes after the rule has been quiet for 30 s or an analyst unblocks the source), alerts are reported once per episode, and the correlation engine remembers which alert belongs to which incident. Incident ID counters are seeded from the persisted history, evidence vault and ledger, so IDs stay unique across restarts. The orchestrator tracks which detections it has already responded to, so evidence is sealed once at containment time (`EVD-<incident id>`); deleting a package removes it and its artifacts, and a new attack is simply a new incident.
 
 ---
 
@@ -390,6 +391,10 @@ Based on the project requirements and implementation specifications, I led the c
 
 - **Secure Session Management:** Passwords are encrypted using high-cost `bcrypt` hashing. Authenticated sessions rely on dual JWT tokens: short-lived access tokens passed in HTTP Bearer headers, and long-lived refresh tokens stored in HttpOnly cookies, protecting the session from XSS extraction.
 - **Granular Backend Authorization:** Every FastAPI REST endpoint is protected by a dependency checking function (`check_permissions`). Access requires both a valid access token and a specific permission claim (e.g., `view_forensics` or `manage_users`) associated with the user's role.
+- **Authenticated live stream:** The `/ws` telemetry stream requires an access token sent as the first message (so it never appears in URLs or access logs), rejects refresh tokens/expired/forged tokens with close code 4003, and is cut when the 15-minute access token expires so the client must renew its session.
+- **No default signing secret:** `JWT_SECRET_KEY` is read from `backend/.env`; if it is missing or weak, a strong one is generated and saved (file mode 600) - the old hard-coded fallback is rejected.
+- **Restricted CORS:** only localhost, private-network (RFC 1918) and `.local` origins may call the API with credentials.
+- **Evidence integrity:** every sealed package carries a SHA-256 of its payload; PDF reports recompute it and flag a mismatch as possible tampering.
 - **Telemetry Data Exposure Protection:** The private IP check prevents internal network addresses (such as `10.0.0.0/8` or `192.168.0.0/16`) from being geolocated by public external API requests. This ensures that internal host topology is never disclosed to external web services.
 - **Command Injection Prevention:** All system subprocess calls (like `lsof`, `arp`, or `log`) use static string arguments rather than shell execution (`shell=False` or lists). This prevents command injection vulnerabilities from manipulating host command execution.
 
@@ -432,7 +437,7 @@ Based on the project requirements and implementation specifications, I led the c
 1. **Distributed Collector Agents:** Build lightweight Python/Go collector daemons for remote Windows/Linux hosts that stream telemetry to a centralized ForenSys ingestion gateway.
 2. **Elasticsearch / OpenSearch Log Destination:** Integrate the Log Explorer with a centralized ELK stack, allowing analysts to search historical logs beyond the local sliding queue.
 3. **Dynamic SOAR Workflow Builder:** Implement a drag-and-drop playbook editor in the frontend, enabling analysts to build complex response workflows with branching logic.
-4. **EDR Host Isolation Actions:** Add actual containment capabilities, such as automated local firewall rules (e.g., calling `iptables` or `pfctl`) to isolate compromised nodes when a SOAR critical rule triggers.
+4. **Opt-in Enforcement Adapters:** ForenSys's containment is logical by design (it never edits the host firewall or signals processes). A future, explicitly opt-in adapter could export the perimeter blocklist to an external firewall or router API, keeping the default behaviour unchanged.
 
 ---
 
@@ -452,14 +457,14 @@ Iris acts as a virtual tier-2 analyst. It is integrated into the dashboard and a
 #### Q4: Is this project ready to be deployed in a production corporate network?
 ForenSys is currently an active project that is still under progress. It is designed as a local single-host SOC platform and security portfolio project. To scale it to a production corporate environment, the local collectors would need to be decoupled into remote endpoint daemons, and database persistence would need to be expanded to support centralized log storage (like OpenSearch).
 #### Q5: What backend databases does the project use?
-It uses a relational MySQL/MariaDB database (running on port 3306) to manage user accounts, roles, departments, statuses, and login password hashes (encrypted via bcrypt). Operational configurations like playbooks, user console profiles, report exports, and deleted evidence logs are stored in local JSON files (`rules.json`, `settings.json`, `reports.json`, `deleted_evidence.json`) to keep the DB configuration simple.
+It uses a relational MySQL/MariaDB database (running on port 3306) to manage user accounts, roles, departments, statuses, and login password hashes (encrypted via bcrypt). Operational state - playbooks, console settings, the remediation audit log, the active perimeter blocklist, the incident ledger (MTTD/MTTR) and the sealed evidence vault - is stored in local JSON files (`rules.json`, `settings.json`, `remediation_history.json`, `perimeter_registry.json`, `incident_ledger.json`, `evidence_vault.json`) to keep the DB configuration simple.
 
 ---
 
 ### Interviewer Questions
 
 #### Q6: How does the dual-mode packet sniffer handle permission errors on macOS/Linux?
-In `traffic.py`, the sniffer attempts to perform a micro-sniff of 0.1 seconds during startup to test raw interface permissions. If a `PermissionError` is caught (due to not running under `sudo`), the sniffer catches the exception and launches a live packet simulator. This simulator queries active connections from `psutil` and generates simulated packet logs (like TLS handshakes or database queries) matching actual destination targets.
+In `traffic.py`, the sniffer attempts to perform a micro-sniff of 0.1 seconds during startup to test raw interface permissions. If a `PermissionError` is caught (due to not running under `sudo`), the sniffer catches the exception and launches a live packet simulator. This simulator queries active connections from `psutil` and generates simulated packet logs (like TLS handshakes or database queries) matching actual destination targets. The current mode is exposed as `capture_mode` (`live` or `simulated`) on `/api/health`, because in simulated mode real attacks from other machines are not visible.
 
 #### Q7: Describe how the socket-to-process mapper works on macOS when psutil throws AccessDenied.
 When `psutil.net_connections()` is blocked, the backend calls `_fallback_lsof()`, executing `lsof -i -P -n` via `subprocess.check_output`. The script parses the text stdout, extracts the process name, PID, local/remote IP addresses, ports, and connection status, and returns a structured array. If `lsof` fails, it runs `netstat -an` as a final fallback.
@@ -490,7 +495,7 @@ The threat engines map categories to MITRE ATT&CK tactics:
 - `new_listener` & `suspicious_listening_port` map to **Persistence**.
 
 #### Q10: How does the incident manager maintain the chain of custody for forensics evidence?
-When an analyst escalates an alert to an incident, the platform creates an entry in the Zustand store and generates a sealed forensic evidence block. This block captures the telemetry parameters, hashes the raw JSON data using a custom SHA-256 checksum, and marks the status as `Sealed` with an audit chain (`['Captured', 'Hashed', 'Sealed']`). Analysts can later authenticate the block, verifying the checksum integrity. Deletion of forensic packages is protected by Admin RBAC, and their deletion is tracked persistently in `deleted_evidence.json` to prevent automated re-collection.
+At containment time the `EvidenceManager` captures the attack's telemetry (packets, logs, sockets, processes) plus attack-specific facts (for a port scan: scanner IP and every probed port), writes a headers-only `capture.pcap` and `evidence.json`, then hashes the final payload with SHA-256 and seals it (`Captured -> Hashed -> Sealed`). The package also records the containment actions taken. Any time a report is generated the hash is recomputed from the stored payload and compared with the sealed digest, so tampering is flagged. Deleting a package is Admin-only.
 
 ---
 
@@ -526,10 +531,10 @@ The threat level (Low, Medium, High, Critical) is calculated dynamically by the 
 - **Low:** System nominal (default).
 
 #### Q18: Can I configure automated playbooks to fire when a threat is detected?
-Yes. Navigate to the **SOAR Automation Workspace** (or Playbooks) page. Here, you can configure triggering rules based on severity and text patterns. When an alert matches these parameters, the playbook fires, increments the execution count, and logs the containment trace.
+Containment is automatic: every incident is contained according to its attack type (block the attacker IP, sinkhole the C2 domain, flag the process) as soon as it is detected - no playbook configuration is needed. Use the **Playbooks** page to see the perimeter blocklist and manually block, unblock or re-block an IP, and the **Automation** page for the audit trail with rollback.
 
 #### Q19: How do I export forensic threat reports?
-In the **Network Intelligence Console** or the **Log Explorer**, you can filter down logs or connections and click the **Export CSV** or **Export JSON** buttons. This compiles the active table rows into structured report packages, which are logged in the backend's `reports.json` history log.
+Open **Reports** and download a full PDF for any incident (or a date-range SOC summary); there is also an **Incident Report (PDF)** button on the Forensics page. The **Network Intelligence Console** and **Log Explorer** still offer **Export CSV / JSON** for filtered table data.
 
 #### Q20: What permissions are assigned to the different roles in ForenSys?
 - **Admin:** All 12 permissions, including user configuration and system settings.
@@ -540,11 +545,17 @@ In the **Network Intelligence Console** or the **Log Explorer**, you can filter 
 #### Q21: How does the platform handle high-frequency WebRTC packet streams during packet sniffing?
 To prevent high-frequency media streams (e.g. video conferencing or screen shares) from overflowing the telemetry queues, the packet sniffer callback in `traffic.py` filters out UDP traffic on WebRTC ranges (ports `19302-19309`, `50000-60000`, and STUN/TURN ports `3478-3481`) at parse time unless the packet has an active DNS layer.
 
-#### Q22: What mechanism prevents the system from automatically regenerating deleted evidence bundles?
-The `EvidenceManager` reads and writes to `deleted_evidence.json`, recording the timestamp when an analyst deletes a forensic package. During telemetry collection, it compares the incident's last updated timestamp against the deletion timestamp. The evidence package will not be regenerated unless new alerts are generated, which updates the incident timestamp beyond the deletion record.
+#### Q22: What prevents the system from regenerating or duplicating evidence for the same incident?
+Evidence is sealed once per incident when the response workflow first handles it; the orchestrator remembers which detections it has already responded to, and an ongoing attack keeps the same alert ID (episode) so it is not re-raised. Incident IDs are seeded from persisted data so they never repeat after a restart. If an analyst deletes a package, it stays deleted - a later attack is a new incident with its own package.
 
 #### Q23: How does ForenSys prevent duplicate alert popups from cluttering the analyst's screen?
-A set named `_emitted_alert_ids` tracks previously broadcasted alert identifiers on the backend. Only fresh, unbroadcasted alerts are emitted during the 3-second cycle. On the client side, the Zustand store uses a `Map` to merge incoming and existing notifications, filtering out duplicate IDs before updating the UI state.
+A set named `_emitted_alert_ids` tracks previously broadcasted alert identifiers on the backend. Only fresh, unbroadcasted alerts are emitted by the 1-second detection cycle (and an ongoing attack keeps a stable alert ID, so it is reported once). On the client side, the Zustand store uses a `Map` to merge incoming and existing notifications, filtering out duplicate IDs before updating the UI state.
+
+#### Q24: How are MTTD and MTTR calculated?
+Per incident, from backend wall-clock timestamps: **MTTD** = detection time minus the earliest observed attacker activity feeding the incident; **MTTR** = detection to completion of the last containment action (evidence sealing is excluded). Values are stored in a persisted ledger and shown as mean / median / p95; incidents that were never contained have no MTTR and are excluded rather than counted as zero. MTTD includes the time an attack needs to cross its rule's threshold.
+
+#### Q25: How is the live telemetry stream protected?
+The WebSocket accepts a connection but sends nothing until the client's first message authenticates it with a valid access token; invalid, forged, refresh or expired tokens are closed with code 4003, and the stream is cut when the token expires so the client renews its session and reconnects.
 
 ---
 
@@ -560,4 +571,4 @@ A set named `_emitted_alert_ids` tracks previously broadcasted alert identifiers
   - **Backend:** FastAPI, Uvicorn, Python, Scapy (BPF Sniffer), psutil, PyMySQL, PyJWT, Bcrypt
   - **Database:** MySQL / MariaDB (Port 3306)
   - **Integrations:** Emerging Threats Blocklist IP database, ipapi.co Geolocation cache, Google Gemini API (`gemini-2.5-flash`)
-- **Key Features:** Real-Time Telemetry Stream (3s loop), Dual-Mode BPF Packet Sniffer (with WebRTC filtering & 5000-packet buffer), Heuristic Threat Correlation (10 MITRE-mapped rules via modular rule engine), Granular RBAC (4 roles / 12 permissions), Dynamic Log Explorer with Regex highlighting, Interactive SVG Topology Map, SOAR Playbooks with dynamic IP blocking and automated unblock commands, and Iris AI Security Copilot.
+- **Key Features:** Real-Time Telemetry Stream (1s detection / 3s slow loops), Dual-Mode BPF Packet Sniffer (with WebRTC filtering & 5000-packet buffer), Heuristic Threat Correlation (10 MITRE-mapped rules via modular rule engine), Granular RBAC (4 roles / 12 permissions), Dynamic Log Explorer with Regex highlighting, Interactive SVG Topology Map, logical SOAR containment (blocklist, sinkhole, process flag) with manual unblock/re-block, sealed per-incident evidence, accurate MTTD/MTTR analytics and PDF incident reports, and Iris AI Security Copilot.

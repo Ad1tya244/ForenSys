@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, EvidenceItem } from '@/lib/app-store';
 import { toast } from 'sonner';
+import { fetchIncidentReportPdf, saveBlob } from '@/lib/api-client';
 import { AccessDenied } from '@/components/rbac/access-denied';
 
 const labelize = (k: string) => k.replace(/_/g, ' ');
@@ -298,6 +299,7 @@ export default function ForensicsPage() {
   const { evidenceItems, authenticateEvidenceItem, deleteEvidenceItemAction, currentUser, hasPermission } = useAppStore();
   const isAdmin = currentUser?.role === 'admin';
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [filter, setFilter] = useState('all');
   const [detailsTab, setDetailsTab] = useState<'structured' | 'raw'>('structured');
   const [mounted, setMounted] = useState(false);
@@ -350,32 +352,16 @@ export default function ForensicsPage() {
     }
   };
 
-  const handleExportReport = (item: EvidenceItem) => {
+  const handleExportReport = async (item: EvidenceItem) => {
+    setExportingPdf(true);
     try {
-      const reportText = `FORENSYS SECURITY REPORT - EVIDENCE VAULT
-==================================================
-Evidence ID: ${item.id}
-Incident ID: ${item.incidentId}
-Evidence Type: ${item.type}
-Collection Timestamp: ${new Date(item.collectedAt).toLocaleString()}
-Collected By: ${item.collectedBy}
-Validation Status: ${item.status}
-SHA256 Integrity Hash: ${item.hash}
-
-RAW PAYLOAD DATA
---------------------------------------------------
-${JSON.stringify(item.payload || {}, null, 2)}
-`;
-      const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(reportText);
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `forensys_report_${item.id}.txt`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      toast.success('Report Exported', { description: `Saved as forensys_report_${item.id}.txt` });
-    } catch (e) {
-      toast.error('Export Failed', { description: 'Could not write text report.' });
+      const { blob, filename } = await fetchIncidentReportPdf(item.incidentId);
+      saveBlob(blob, filename);
+      toast.success('Incident report downloaded', { description: filename });
+    } catch (e: any) {
+      toast.error('Could not generate the report', { description: e.message || 'Unexpected error' });
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -614,9 +600,10 @@ ${JSON.stringify(item.payload || {}, null, 2)}
                     variant="outline"
                     className="w-full border-border/50 flex items-center justify-center gap-1.5 text-xs truncate"
                     size="sm"
-                    disabled={!hasPermission('export_forensics')}
+                    disabled={!hasPermission('view_forensics') || exportingPdf}
+                    title="Full incident report (PDF): timeline, detections, forensics, containment, evidence and logs"
                   >
-                    Export Report
+                    {exportingPdf ? 'Generating…' : 'Incident Report (PDF)'}
                   </Button>
                   {isAdmin ? (
                     <Button

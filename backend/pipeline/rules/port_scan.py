@@ -35,7 +35,7 @@ class PortScanRule(BaseRule):
             src_ip_v4 = ensure_ipv4(src_ip)
             sample_ports = sorted(ports)[:10]
             first_seen = snapshot.first_seen_by_src.get(src_ip, current_time)
-            mttd_sec = max(0.1, round(current_time - first_seen, 2))
+            mttd_sec = round(max(0.0, current_time - first_seen), 3)
             episode = self.episode_id(f"scan-{src_ip_v4}", current_time)
             alerts.append(DetectionAlert(
                 alert_id=f"portscan-{src_ip_v4}-{episode}",

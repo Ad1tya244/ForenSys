@@ -62,6 +62,7 @@ class WindowStateSnapshot:
     last_seen_by_src: Dict[str, float] = field(default_factory=dict)
     auth_fail_events: Dict[str, List[NormalizedEvent]] = field(default_factory=dict)
     syn_by_src_port: Dict[str, Dict[int, int]] = field(default_factory=dict)
+    first_upload_by_peer: Dict[str, float] = field(default_factory=dict)
 
 class BehaviorStateEngine:
     def __init__(self, max_retention_sec: float = 300.0, max_events: int = 60000) -> None:
@@ -69,6 +70,7 @@ class BehaviorStateEngine:
         self.events: deque[NormalizedEvent] = deque(maxlen=max_events)
         self.seen_listeners_history: Set[Tuple[str, int]] = set()
         self.known_processes_history: Set[str] = set()
+        self._audited_listeners: Set[Tuple[str, int]] = set()
 
     def process_event(self, event: NormalizedEvent, config: Optional[Dict[str, Any]] = None) -> None:
         """Ingests a normalized event and adds it to the sliding event buffer."""
@@ -77,7 +79,14 @@ class BehaviorStateEngine:
         if is_trusted and reason:
             event.is_trusted = True
             event.trust_reason = reason
-            asset_trust_manager.log_ignored_event(event.to_dict(), reason)
+            # Listening sockets are re-asserted every second; audit each one once, not once per cycle
+            if event.event_type == "LISTENER":
+                key = (event.process_name, event.src_port)
+                if key not in self._audited_listeners:
+                    self._audited_listeners.add(key)
+                    asset_trust_manager.log_ignored_event(event.to_dict(), reason)
+            else:
+                asset_trust_manager.log_ignored_event(event.to_dict(), reason)
 
         self.events.append(event)
 
@@ -137,6 +146,7 @@ class BehaviorStateEngine:
         outbound_bytes_by_dst: Dict[str, int] = defaultdict(int)
         upload_by_peer: Dict[str, int] = defaultdict(int)
         download_by_peer: Dict[str, int] = defaultdict(int)
+        first_upload: Dict[str, float] = {}
         auth_fails: Dict[str, int] = defaultdict(int)
         auth_succs: Dict[str, int] = defaultdict(int)
         auth_fail_events: Dict[str, List[NormalizedEvent]] = defaultdict(list)
@@ -193,6 +203,7 @@ class BehaviorStateEngine:
                 dst_local = bool(ev.dst_ip) and is_local_ip(ev.dst_ip)
                 if src_local and ev.dst_ip and not is_local_ip(ev.dst_ip):
                     upload_by_peer[ev.dst_ip] += ev.byte_count
+                    first_upload.setdefault(ev.dst_ip, ev.timestamp)
                 elif dst_local and ev.src_ip and not is_local_ip(ev.src_ip):
                     download_by_peer[ev.src_ip] += ev.byte_count
 
@@ -250,6 +261,7 @@ class BehaviorStateEngine:
             last_seen_by_src=last_seen_by_src,
             auth_fail_events=dict(auth_fail_events),
             syn_by_src_port={k: dict(v) for k, v in syn_by_port.items()},
+            first_upload_by_peer=first_upload,
         )
 
     def get_all_window_snapshots(self, now: Optional[float] = None) -> Dict[str, WindowStateSnapshot]:

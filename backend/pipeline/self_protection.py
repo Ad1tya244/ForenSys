@@ -20,7 +20,11 @@ TRUSTED_PROCESS_NAMES = {
     "scapy", "next-server", "ts-node", "gunicorn", "pcap"
 }
 
-TRUSTED_PORTS = {8000, 3000, 3001, 3306, 5173}
+# 33060 = MySQL X Protocol, opened by mysqld alongside 3306 (this project's database dependency)
+TRUSTED_PORTS = {8000, 3000, 3001, 3306, 33060, 5173}
+
+# python3.12, Python, python3.14 ... all count as the Python runtime this backend runs on
+TRUSTED_PROCESS_PREFIXES = ("python",)
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -115,6 +119,25 @@ class AssetTrustManager:
     def unregister_pid(self, pid: int) -> None:
         self.registered_pids.discard(pid)
 
+    def is_trusted_listener(self, process_name: str, port: int, ip: str = "", pid: Optional[int] = None) -> Tuple[bool, Optional[str]]:
+        """Is this listening socket one of ForenSys's own components / declared dependencies (MySQL, the Python
+        backend, the Next.js dev server)?
+
+        Trust needs BOTH the right process identity AND an expected setting for it - a known service port (or a
+        loopback-only bind). So `mysqld` on 3306/33060 is ignored, but something called `mysqld` listening on 4444
+        for the whole network, or `nc` on 3306, still alerts.
+        """
+        if pid is not None and pid in self.registered_pids:
+            return True, f"Trusted ForenSys Process PID ({pid})"
+        name = (process_name or "").lower()
+        known = name in TRUSTED_PROCESS_NAMES or name.startswith(TRUSTED_PROCESS_PREFIXES)
+        if not known:
+            return False, None
+        loopback = ip in LOOPBACK_HOSTS or ip.startswith("127.")
+        if port in TRUSTED_PORTS or loopback:
+            return True, f"ForenSys dependency '{process_name}' listening on port {port}"
+        return False, None
+
     def is_trusted_event(self, event: Dict[str, Any], config: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
         Determines whether a telemetry event originates from a trusted ForenSys platform component.
@@ -136,6 +159,11 @@ class AssetTrustManager:
 
         is_src_loopback = (src_ip in LOOPBACK_HOSTS) or src_ip.startswith("127.")
         is_dst_loopback = (dst_ip in LOOPBACK_HOSTS) or dst_ip.startswith("127.")
+
+        # Listening sockets owned by ForenSys components / dependencies (e.g. mysqld on 3306 and 33060)
+        if event_type == "LISTENER":
+            return self.is_trusted_listener(event.get("process") or "", int(event.get("src_port") or 0),
+                                            event.get("src_ip") or "", pid)
 
         # Dedicated rule for raw network packets off the wire
         if event_type == "PACKET":

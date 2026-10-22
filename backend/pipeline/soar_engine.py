@@ -55,6 +55,7 @@ class RemediationActionLog:
             "actionType": self.action_type,
             "target": self.target,
             "timestamp": _iso(self.timestamp),
+            "epoch": round(self.timestamp, 3),   # sub-second precision for timelines/MTTR; "timestamp" is for display
             "status": self.status,
             "resultDetails": self.result_details,
             "rollbackInfo": self.rollback_info,
@@ -96,7 +97,7 @@ class SOAREngine:
                     rule_name=item["ruleName"],
                     action_type=item["actionType"],
                     target=item["target"],
-                    timestamp=calendar.timegm(time.strptime(item["timestamp"], ISO)),
+                    timestamp=item.get("epoch") or calendar.timegm(time.strptime(item["timestamp"], ISO)),
                     status=item["status"],
                     result_details=item.get("resultDetails", {}),
                     rollback_info=item.get("rollbackInfo", {}),
@@ -248,7 +249,6 @@ class SOAREngine:
         if not incident or not incident.id:
             print("[SOAREngine] Execution rejected: Missing incident context.")
             return []
-        now = now if now else time.time()
         executed: List[RemediationActionLog] = []
         for act_type, target, reason in self.plan_actions(incident):
             already_done = any(
@@ -258,13 +258,15 @@ class SOAREngine:
             )
             if already_done:
                 continue
+            # Real wall clock per action (unless a caller pins `now`, e.g. tests), so mttr_sec is the true latency
+            act_now = now if now else time.time()
             context = {
                 "detected_at": _iso(incident.created_at),
-                "mttr_sec": round(max(0.0, now - incident.created_at), 3),
+                "mttr_sec": round(max(0.0, act_now - incident.created_at), 3),
                 "severity": incident.severity,
                 "attack_type": incident.attack_types[0] if incident.attack_types else "",
             }
-            executed.append(self.execute_action(incident.id, act_type, target, reason, now, context))
+            executed.append(self.execute_action(incident.id, act_type, target, reason, act_now, context))
         return executed
 
     def evaluate_and_remediate(self, incident: CorrelatedIncident, soar_playbook_rules: Optional[List[Dict[str, Any]]] = None) -> List[RemediationActionLog]:

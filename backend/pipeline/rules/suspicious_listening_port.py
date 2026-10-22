@@ -26,6 +26,10 @@ class SuspiciousListeningPortRule(BaseRule):
         window_sec = 30.0
 
         snapshot = state_engine.get_window_snapshot(window_sec, current_time)
+        first_listen: Dict[Any, float] = {}
+        for ev in state_engine.recent_events(window_sec, current_time):
+            if ev.event_type == "LISTENER" and ev.src_port > 0:
+                first_listen.setdefault((ev.process_name, ev.src_port), ev.timestamp)
         for (proc_name, port) in snapshot.active_listeners:
             proc_lower = proc_name.lower()
             
@@ -59,7 +63,9 @@ class SuspiciousListeningPortRule(BaseRule):
                     remediation=self.recommended_remediation,
                     metadata={
                         "process": proc_name, "port": port, "quarantine_process": proc_name,
-                        "detected_at": current_time, "mttd_sec": 0.5, "attack_type": "suspicious_listener",
+                        "first_seen": first_listen.get((proc_name, port), current_time), "detected_at": current_time,
+                        "mttd_sec": round(max(0.0, current_time - first_listen.get((proc_name, port), current_time)), 3),
+                        "attack_type": "suspicious_listener",
                     }
                 ))
         return alerts

@@ -198,6 +198,8 @@ interface AppState {
 
 // ── Socket singleton (one WS for entire app lifetime) ────────────────────────
 let _socket: BackendSocket | null = null;
+let _sessionCheckInFlight = false;
+let _pingTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 export const useAppStore = create<AppState>((set, get) => ({
@@ -272,11 +274,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    if (_socket) return; // already connected
+    if (_socket || _sessionCheckInFlight) return; // already connected / session check already running
+    _sessionCheckInFlight = true;
 
     // First attempt to refresh token automatically from cookies
     refreshSession()
       .then((res) => {
+        _sessionCheckInFlight = false;
         setAccessToken(res.access_token);
         set({ currentUser: res.user, accessToken: res.access_token, backendChecked: true, backendConnected: true });
         if (typeof window !== 'undefined') {
@@ -316,30 +320,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         _socket.connect(res.access_token);
       })
       .catch(() => {
-        // Clear invalid local user session
+        _sessionCheckInFlight = false;
+        // No valid session: clear any stale local user. The live stream requires a login, so no socket is opened
+        // here - the login page only needs to know whether the backend is reachable.
         setAccessToken(null);
         set({ currentUser: null, accessToken: null, backendChecked: true });
         if (typeof window !== 'undefined') {
           localStorage.removeItem('forensys_user');
         }
 
-        checkBackendAlive().then((alive) => {
-          set({ backendConnected: alive });
-          if (alive) {
-            get().checkSetupStatus();
-          }
-        });
-
-        if (!_socket) {
-          _socket = new BackendSocket((snapshot) => {
-            get()._applySnapshot(snapshot);
+        const probe = () => {
+          if (get().currentUser) return; // signed in meanwhile - the authenticated socket takes over
+          checkBackendAlive().then((alive) => {
+            set({ backendConnected: alive });
+            if (alive) {
+              get().checkSetupStatus();
+            } else {
+              setTimeout(probe, 3000); // keep watching until the backend comes up
+            }
           });
-        }
-        _socket.connect();
+        };
+        probe();
       });
 
-    // Keep-alive ping every 10 seconds
-    setInterval(() => _socket?.ping(), 10000);
+    // Keep-alive ping every 10 seconds (single timer for the whole app)
+    if (!_pingTimer) {
+      _pingTimer = setInterval(() => _socket?.ping(), 10000);
+    }
   },
 
   disconnectBackend: () => {
